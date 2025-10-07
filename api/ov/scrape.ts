@@ -34,6 +34,18 @@ interface ScrapedHotelData {
   images?: string[];
   amenities?: string[];
   description?: string;
+  detailed_description?: {
+    location_info?: string;
+    resort_facilities?: string;
+    room_amenities?: string;
+    full_description?: string;
+  };
+  additional_info?: {
+    transfer_details?: string;
+    policies?: string[];
+    pricing_info?: string;
+    full_additional_info?: string;
+  };
   contact?: {
     phone?: string;
     email?: string;
@@ -48,6 +60,8 @@ interface ScrapedHotelData {
     rooms?: number;
     checkin?: string;
     checkout?: string;
+    electrical_sockets?: string[];
+    children_policy?: string[];
   };
 }
 
@@ -291,12 +305,12 @@ async function extractHotelData(html: string, masterId: string): Promise<Scraped
     }
 
     // Extract location/address - enhanced for full address
-    const locationMatch = html.match(/paragraph\s+\[ref=[^>]*\]:\s*([^\\n]+Maldives[^\\n]*)/i) ||
-                         html.match(/text:\s*([^\\n]+Maldives[^\\n]*)/i) ||
-                         html.match(/address['"]\s*:\s*['"]([^'"]+)['"]/i) ||
-                         html.match(/<address[^>]*>([^<]+)<\/address>/i);
-    if (locationMatch && locationMatch[1]) {
-      data.location = locationMatch[1].trim().replace(/\s+/g, ' ');
+    const locationAddressMatch = html.match(/paragraph\s+\[ref=[^>]*\]:\s*([^\\n]+Maldives[^\\n]*)/i) ||
+                                html.match(/text:\s*([^\\n]+Maldives[^\\n]*)/i) ||
+                                html.match(/address['"]\s*:\s*['"]([^'"]+)['"]/i) ||
+                                html.match(/<address[^>]*>([^<]+)<\/address>/i);
+    if (locationAddressMatch && locationAddressMatch[1]) {
+      data.location = locationAddressMatch[1].trim().replace(/\s+/g, ' ');
     }
 
     // Extract images
@@ -398,15 +412,166 @@ async function extractHotelData(html: string, masterId: string): Promise<Scraped
       hotelFacts.checkout = checkoutMatch[1];
     }
 
+    // Extract children policies
+    const childrenPolicies: string[] = [];
+    const childrenMatches = html.matchAll(/children[^.]*\./gi);
+    for (const match of childrenMatches) {
+      const policy = match[0].trim();
+      if (policy.length > 10 && !childrenPolicies.some(p => p.toLowerCase().includes(policy.toLowerCase()))) {
+        childrenPolicies.push(policy);
+      }
+    }
+    
+    // Also look for age-based policies
+    const agePolicyMatches = html.matchAll(/(\d+)\s+(?:years?\s+)?(?:old|age)[^.]*\./gi);
+    for (const match of agePolicyMatches) {
+      const policy = match[0].trim();
+      if (policy.length > 10 && !childrenPolicies.includes(policy)) {
+        childrenPolicies.push(policy);
+      }
+    }
+    
+    if (childrenPolicies.length > 0) {
+      hotelFacts.children_policy = childrenPolicies.slice(0, 5); // Limit to 5 most relevant policies
+    }
+
     if (Object.keys(hotelFacts).length > 0) {
       data.hotel_facts = hotelFacts;
     }
 
-    // Extract description
+    // Extract basic description
     const descMatch = html.match(/<meta\s+name\s*=\s*['"]description['"][^>]*content\s*=\s*['"]([^'"]{100,})['"]/i) ||
                      html.match(/<p[^>]*>([^<]{200,}?)<\/p>/i);
     if (descMatch && descMatch[1]) {
       data.description = descMatch[1].trim().substring(0, 500);
+    }
+
+    // Extract detailed descriptions using CSS class patterns
+    const detailedDescription: any = {};
+
+    // Extract location information - target specific CSS classes
+    const locationDescMatch = html.match(/<p class="About_descriptionTitle__POYEB">Location<\/p><p class="About_descriptionParagraph__xWYso">([^<]+)<\/p>/i);
+    if (locationDescMatch && locationDescMatch[1]) {
+      detailedDescription.location_info = locationDescMatch[1].trim();
+    }
+
+    // Extract "At the resort" section - multiple paragraphs
+    const atResortMatches = html.matchAll(/<p class="About_descriptionTitle__POYEB">At the resort<\/p>((?:<p class="About_descriptionParagraph__xWYso">[^<]+<\/p>)*)/i);
+    let resortInfo = '';
+    for (const match of atResortMatches) {
+      if (match[1]) {
+        const paragraphMatches = match[1].matchAll(/<p class="About_descriptionParagraph__xWYso">([^<]+)<\/p>/g);
+        const paragraphs: string[] = [];
+        for (const pMatch of paragraphMatches) {
+          if (pMatch[1]) {
+            paragraphs.push(pMatch[1].trim());
+          }
+        }
+        if (paragraphs.length > 0) {
+          resortInfo = paragraphs.join(' ');
+          break;
+        }
+      }
+    }
+    if (resortInfo) {
+      detailedDescription.resort_facilities = resortInfo;
+    }
+
+    // Alternative pattern for resort facilities if the above doesn't work
+    if (!resortInfo) {
+      const resortFallback = html.match(/At the resort<\/p>[\s\S]*?<p class="About_descriptionParagraph__xWYso">([\s\S]*?)(?=<p class="About_descriptionTitle__POYEB">|<\/div>)/i);
+      if (resortFallback && resortFallback[1]) {
+        // Extract all paragraphs from this section
+        const allParagraphs = resortFallback[1].matchAll(/<p class="About_descriptionParagraph__xWYso">([^<]+)<\/p>/g);
+        const paragraphTexts: string[] = [];
+        for (const pMatch of allParagraphs) {
+          if (pMatch[1]) {
+            paragraphTexts.push(pMatch[1].trim());
+          }
+        }
+        if (paragraphTexts.length > 0) {
+          detailedDescription.resort_facilities = paragraphTexts.join(' ');
+        }
+      }
+    }
+
+    // Extract room amenities information
+    const roomAmenitiesMatch = html.match(/<p class="About_descriptionTitle__POYEB">Room amenities<\/p><p class="About_descriptionParagraph__xWYso">([^<]+)<\/p>/i);
+    if (roomAmenitiesMatch && roomAmenitiesMatch[1]) {
+      detailedDescription.room_amenities = roomAmenitiesMatch[1].trim();
+    }
+
+    // Extract electrical socket types from Facts section
+    const socketTypes: string[] = [];
+    const socketMatches = html.matchAll(/<p>Type ([GJKL])<\/p>/g);
+    for (const match of socketMatches) {
+      if (match[1] && !socketTypes.includes(`Type ${match[1]}`)) {
+        socketTypes.push(`Type ${match[1]}`);
+      }
+    }
+
+    if (Object.keys(detailedDescription).length > 0) {
+      data.detailed_description = detailedDescription;
+    }
+
+    // Update hotel_facts to include electrical sockets
+    if (socketTypes.length > 0) {
+      if (!data.hotel_facts) data.hotel_facts = {};
+      data.hotel_facts.electrical_sockets = socketTypes;
+    }
+
+    // Extract Additional Information section
+    const additionalInfo: any = {};
+    
+    // Extract from "Additional information" section using CSS classes
+    const additionalInfoMatch = html.match(/<h3 class="Section_title__XmYEu">Additional information<\/h3>[\s\S]*?<div class="Section_content__kI4t6">([\s\S]*?)(?=<\/div><\/div>)/i);
+    if (additionalInfoMatch && additionalInfoMatch[1]) {
+      // Extract all policy paragraphs
+      const policyMatches = additionalInfoMatch[1].matchAll(/<div class="PolicyBlock_paragraph__2bmGu">([^<]*(?:<[^>]*>[^<]*)*)<\/div>/g);
+      const policies: string[] = [];
+      let fullText = '';
+      
+      for (const match of policyMatches) {
+        if (match[1] && match[1].trim()) {
+          const cleanText = match[1].trim().replace(/\s+/g, ' ');
+          if (cleanText.length > 3) { // Filter out empty or very short entries
+            policies.push(cleanText);
+            fullText += cleanText + ' ';
+          }
+        }
+      }
+      
+      if (policies.length > 0) {
+        additionalInfo.policies = policies;
+        additionalInfo.full_additional_info = fullText.trim();
+        
+        // Extract specific information types
+        const transferPolicies = policies.filter(p => 
+          p.toLowerCase().includes('transfer') || 
+          p.toLowerCase().includes('airport') || 
+          p.toLowerCase().includes('flight')
+        );
+        
+        if (transferPolicies.length > 0) {
+          additionalInfo.transfer_details = transferPolicies.join(' ');
+        }
+        
+        // Extract pricing information
+        const pricingPolicies = policies.filter(p => 
+          p.includes('USD') || 
+          p.toLowerCase().includes('cost') || 
+          p.toLowerCase().includes('fee') ||
+          p.toLowerCase().includes('supplement')
+        );
+        
+        if (pricingPolicies.length > 0) {
+          additionalInfo.pricing_info = pricingPolicies.join(' ');
+        }
+      }
+    }
+    
+    if (Object.keys(additionalInfo).length > 0) {
+      data.additional_info = additionalInfo;
     }
 
     // Extract contact information
