@@ -1,5 +1,13 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "functions": {
+    "api/**/*.ts": {
+      "runtime": "edge"
+    }
+  },
+  "buildCommand": "",
+  "outputDirectory": null,
+  "installCommand": "npm install",
   "rewrites": [
     {
       "source": "/health",
