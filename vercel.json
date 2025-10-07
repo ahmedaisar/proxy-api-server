@@ -1,24 +1,5 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "functions": {
-    "api/health.ts": {
-      "runtime": "@godsreveal/vercel-bun@0.2.4"
-    },
-    "api/search.ts": {
-      "runtime": "@godsreveal/vercel-bun@0.2.4"
-    },
-    "api/hotels/[slug].ts": {
-      "runtime": "@godsreveal/vercel-bun@0.2.4"
-    }
-  },
-  "rewrites": [
-    {
-      "source": "/health",
-      "destination": "/api/health"
-    },
-    {
-      "source": "/((?!api/).*)",
-      "destination": "/api/search"
-    }
-  ]
+  "installCommand": "curl -fsSL https://bun.sh/install | bash && ~/.bun/bin/bun install --frozen-lockfile",
+  "buildCommand": "~/.bun/bin/bun run build"
 }
