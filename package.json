@@ -22,13 +22,12 @@
     "bun",
     "api",
     "server",
-    "anextour",
     "proxy",
     "hotels",
     "tours",
     "typescript"
   ],
-  "author": "Your Name",
+  "author": "0xm1cro",
   "license": "MIT",
   "dependencies": {
     "@vercel/node": "^3.0.0"
@@ -37,14 +36,8 @@
     "@types/bun": "latest",
     "@types/node": "^20.0.0"
   },
-  "peerDependencies": {
-    "typescript": "^5"
-  },
-  "engines": {
-    "bun": ">=1.0.0"
-  },
   "repository": {
     "type": "git",
-    "url": "your-repo-url"
+    "url": "https://github.com/ahmedaisar/proxy-api-server.git"
   }
 }
