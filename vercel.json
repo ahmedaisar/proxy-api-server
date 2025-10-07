@@ -1,21 +1,13 @@
 {
-  "version": 2,
-  "routes": [
-    {
-      "src": "/health",
-      "dest": "/api/health"
-    },
-    {
-      "src": "/api/(.*)",
-      "dest": "/api/$1"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "/api/search?$1"
-    }
-  ],
+  "$schema": "https://openapi.vercel.sh/vercel.json",
   "functions": {
-    "api/**/*.ts": {
+    "api/health.ts": {
+      "runtime": "@godsreveal/vercel-bun@0.2.4"
+    },
+    "api/search.ts": {
+      "runtime": "@godsreveal/vercel-bun@0.2.4"
+    },
+    "api/hotels/[slug].ts": {
       "runtime": "@godsreveal/vercel-bun@0.2.4"
     }
   }
