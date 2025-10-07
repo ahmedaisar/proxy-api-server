@@ -61,7 +61,7 @@ export default async function handler(req: Request, { params }: { params: { slug
     }
 
     // URL encode the hotel slug for the API request
-    const encodedHotelSlug = encodeURIComponent(slug);
+    const encodedHotelSlug = decodeURIComponent(encodeURIComponent(slug));
     const apiUrl = `https://api.anextour.ru/b2c/hotel?hotel=${encodedHotelSlug}`;
 
     const response = await fetch(apiUrl, {
