@@ -16,7 +16,7 @@ function getClientIp(req: Request): string {
   );
 }
 
-export default async function handler(req: Request, { params }: { params: { slug: string } }): Promise<Response> {
+export default async function handler(req: Request): Promise<Response> {
   const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
@@ -50,30 +50,64 @@ export default async function handler(req: Request, { params }: { params: { slug
       }), { status: 429, headers: corsHeaders });
     }
 
-    // Extract hotel slug from params
-    const slug = params?.slug;
+    // Parse URL and extract hotel slug
+    const url = new URL(req.url);
     
-    if (!slug || typeof slug !== 'string') {
+    // Method 1: Check for slug in query parameter (more robust)
+    let hotelSlug = url.searchParams.get('slug');
+    
+    // Method 2: If no query param, extract from path (fallback)
+    if (!hotelSlug) {
+      // Remove the leading '/api/hotels' part and get the remaining path
+      const path = url.pathname.replace('/api/hotels', '');
+      if (path && path.length > 1) {
+        // If path exists and is not just '/', use it as the slug
+        hotelSlug = path.startsWith('/') ? path : `/${path}`;
+      }
+    }
+
+    // Method 3: Handle full slug format from your example: "/hotels/maldives/arrival-beachspa"
+    if (hotelSlug && !hotelSlug.startsWith('/hotels/')) {
+      // If it doesn't start with '/hotels/', assume it needs to be prefixed
+      if (!hotelSlug.startsWith('/')) {
+        hotelSlug = `/hotels/${hotelSlug}`;
+      } else {
+        hotelSlug = `/hotels${hotelSlug}`;
+      }
+    }
+
+    // Validate slug
+    if (!hotelSlug || hotelSlug === '/' || hotelSlug === '/hotels/' || hotelSlug.trim() === '') {
       return new Response(JSON.stringify({
-        error: "Hotel slug is required",
+        error: "Hotel slug is required. Provide it as query parameter: ?slug=/hotels/maldives/arrival-beachspa or as path: /api/hotels/maldives/arrival-beachspa",
+        examples: [
+          "GET /api/hotels?slug=/hotels/maldives/arrival-beachspa",
+          "GET /api/hotels/maldives/arrival-beachspa"
+        ],
         timestamp: new Date().toISOString()
       }), { status: 400, headers: corsHeaders });
     }
 
-    // URL encode the hotel slug for the API request
-    const encodedHotelSlug = decodeURIComponent(encodeURIComponent(slug));
+    // Clean and encode the hotel slug for the API request
+    const cleanSlug = hotelSlug.trim();
+    const encodedHotelSlug = encodeURIComponent(cleanSlug);
     const apiUrl = `https://api.anextour.ru/b2c/hotel?hotel=${encodedHotelSlug}`;
+
+    console.log(`Fetching hotel details for slug: "${cleanSlug}" -> ${apiUrl}`);
 
     const response = await fetch(apiUrl, {
       method: "GET",
       headers: {
-        accept: "application/json, text/plain, */*"
+        accept: "application/json, text/plain, */*",
+        "user-agent": "AnexTour-Proxy/1.0"
       }
     });
 
     if (!response.ok) {
       return new Response(JSON.stringify({
         error: `Failed to fetch hotel details: ${response.status} ${response.statusText}`,
+        slug: cleanSlug,
+        apiUrl: apiUrl.replace(encodedHotelSlug, '[ENCODED_SLUG]'), // Don't expose the full URL in error
         timestamp: new Date().toISOString()
       }), { status: response.status, headers: corsHeaders });
     }
@@ -84,6 +118,7 @@ export default async function handler(req: Request, { params }: { params: { slug
       success: true,
       data,
       message: "Hotel details fetched successfully",
+      slug: cleanSlug,
       timestamp: new Date().toISOString()
     }), { status: 200, headers: corsHeaders });
 
@@ -96,7 +131,7 @@ export default async function handler(req: Request, { params }: { params: { slug
     
     return new Response(JSON.stringify({
       error: "Failed to fetch hotel details",
-      details: { originalError: errorMessage, slug: params?.slug },
+      details: { originalError: errorMessage },
       timestamp: new Date().toISOString()
     }), { status: 500, headers: corsHeaders });
   }
