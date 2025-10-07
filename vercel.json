@@ -1,11 +1,5 @@
 {
   "version": 2,
-  "builds": [
-    {
-      "src": "api/**/*.ts",
-      "use": "@vercel/node"
-    }
-  ],
   "routes": [
     {
       "src": "/health",
@@ -19,5 +13,10 @@
       "src": "/(.*)",
       "dest": "/api/search?$1"
     }
-  ]
+  ],
+  "functions": {
+    "api/**/*.ts": {
+      "runtime": "@vercel/node@18"
+    }
+  }
 }
