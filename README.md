@@ -1,6 +1,6 @@
-# AnexTour API Proxy Server
+# Hotel API Proxy Server
 
-A high-performance API proxy server built for Vercel Edge Runtime, providing hotel search and details functionality for the AnexTour API.
+A high-performance API proxy server built for Vercel Edge Runtime, providing hotel search and details functionality for multiple hotel booking APIs.
 
 ## ✨ Features
 
@@ -9,12 +9,14 @@ A high-performance API proxy server built for Vercel Edge Runtime, providing hot
 - 🌐 **CORS Enabled**: Full cross-origin request support
 - 📱 **TypeScript**: Full type safety and IntelliSense
 - ⚡ **Serverless**: Auto-scaling with zero cold starts on Edge Runtime
+- 🏨 **Multi-API Support**: AnexTour and Ostrovok.ru integration
+- 🔍 **Web Scraping**: Rich hotel data extraction from Ostrovok pages
 
 ## 🚀 Quick Start
 
 ### Prerequisites
 
-- Node.js 18+
+- Node.js 22+
 - Vercel CLI
 - TypeScript
 
@@ -57,7 +59,7 @@ vercel --prod
 
 ## 📚 API Endpoints
 
-### Health Check
+### 1. Health Check
 
 ```http
 GET /api/health
@@ -65,11 +67,29 @@ GET /api/health
 
 Returns API health status and version information.
 
-### Search Hotels
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "status": "healthy",
+    "timestamp": "2025-10-07T12:00:00.000Z",
+    "version": "1.0.0",
+    "environment": "vercel-edge"
+  },
+  "message": "API is healthy"
+}
+```
+
+---
+
+### 2. AnexTour Hotel Search
 
 ```http
 GET /api/search?adults=2&checkin=20251111&checkout=20251114&state=176
 ```
+
+Search hotels using the AnexTour API.
 
 **Query Parameters:**
 
@@ -82,7 +102,9 @@ GET /api/search?adults=2&checkin=20251111&checkout=20251114&state=176
 - `nightmax` - Maximum nights (default: 7)
 - `currency` - Currency ID (default: 1)
 
-### Get Hotel Details
+---
+
+### 3. AnexTour Hotel Details
 
 ```http
 GET /api/hotels?slug=/hotels/maldives/arrival-beachspa
@@ -90,28 +112,95 @@ GET /api/hotels?slug=/hotels/maldives/arrival-beachspa
 
 Get detailed information for a specific hotel using its slug from search results.
 
-### Ostrovok Hotel Search (NEW)
+**Query Parameters:**
+
+- `slug` - Hotel slug from search results
+
+---
+
+### 4. Ostrovok Hotel Search
 
 ```http
+GET /api/ov/search?region_id=109&arrival_date=2025-11-10&departure_date=2025-11-15&adults=2
 POST /api/ov/search
 ```
 
-Search hotels via Ostrovok.ru API with customizable parameters.
+Search hotels via Ostrovok.ru API with flexible parameter support.
 
-**Request Body:**
+**GET Query Parameters / POST Body:**
+
+- `region_id` - Destination region ID (default: 109)
+- `arrival_date` - Check-in date YYYY-MM-DD (default: 2025-11-10)
+- `departure_date` - Check-out date YYYY-MM-DD (default: 2025-11-15)
+- `adults` - Number of adults (default: 2)
+- `children` - Number of children (default: 0)
+- `child_ages` - Array of child ages (e.g., [5,8])
+- `currency` - Currency code (default: RUB)
+- `language` - Language code (default: en)
+- `page` - Page number (default: 1)
+- `kinds` - Hotel types array (default: ["resort"])
+- `sort` - Sort order (default: price_asc)
+- `map_hotels` - Include map data (default: true)
+
+**POST Request Body Example:**
 ```json
 {
   "region_id": 109,
   "arrival_date": "2025-11-10",
   "departure_date": "2025-11-15",
   "adults": 2,
+  "children": 1,
+  "child_ages": [8],
   "currency": "USD",
   "page": 1,
   "sort": "price_asc"
 }
 ```
 
-See [OSTROVOK-API.md](OSTROVOK-API.md) for full documentation.
+---
+
+### 5. Ostrovok Hotel Details
+
+```http
+GET /api/ov/hotel?hotel=reethi_faru_resort&arrival_date=2026-01-12&departure_date=2026-01-17
+POST /api/ov/hotel
+```
+
+Get detailed hotel information from Ostrovok API with pricing and availability.
+
+**GET Query Parameters / POST Body:**
+
+- `hotel` - Hotel identifier (required)
+- `arrival_date` - Check-in date YYYY-MM-DD (required)
+- `departure_date` - Check-out date YYYY-MM-DD (required)
+- `adults` - Number of adults (default: 2)
+- `children` - Number of children (default: 0)
+- `child_ages` - Array of child ages
+- `currency` - Currency code (default: RUB)
+
+---
+
+### 6. Ostrovok Hotel Scraper
+
+```http
+GET /api/ov/scrape?master_id=6669997&ota_hotel_id=canareef_resort_maldives&region_slug=maldives/addu_atoll
+```
+
+Scrape detailed hotel information directly from Ostrovok hotel pages.
+
+**Query Parameters:**
+
+- `master_id` - Hotel master ID (required)
+- `ota_hotel_id` - OTA hotel identifier (required)  
+- `region_slug` - Region slug path (required)
+
+**Response includes:**
+- Hotel name, rating, and reviews
+- Detailed descriptions and amenities
+- Image galleries
+- Policy information
+- Location details
+- Contact information
 
 ## 🏗️ Project Structure
 
