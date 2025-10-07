@@ -16,7 +16,7 @@
   ],
   "functions": {
     "api/**/*.ts": {
-      "runtime": "bun"
+      "runtime": "bun@1.0.0"
     }
   }
 }
