@@ -1,6 +1,6 @@
 // Vercel Configuration Validator
-const fs = require('fs');
-const path = require('path');
+import fs from 'fs';
+import path from 'path';
 
 console.log('🔍 Validating Vercel.json configuration...\n');
 

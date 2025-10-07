@@ -5,6 +5,9 @@
   "main": "api/health.ts",
   "type": "module",
   "private": true,
+  "engines": {
+    "node": "22.x"
+  },
   "scripts": {
     "dev": "vercel dev",
     "build": "tsc --noEmit",
