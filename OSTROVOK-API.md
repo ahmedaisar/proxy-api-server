@@ -21,6 +21,8 @@ All parameters are optional. The endpoint uses sensible defaults if not provided
 | `arrival_date` | string | `2025-11-10` | Check-in date (YYYY-MM-DD) |
 | `departure_date` | string | `2025-11-15` | Check-out date (YYYY-MM-DD) |
 | `adults` | number | `2` | Number of adults |
+| `children` | number | `0` | Number of children |
+| `child_ages` | array | `[]` | Ages of children (comma-separated for GET) |
 | `currency` | string | `RUB` | Currency code (RUB, USD, EUR, etc.) |
 | `language` | string | `en` | Language code (en, ru, etc.) |
 | `page` | number | `1` | Page number for pagination |
@@ -38,10 +40,16 @@ All parameters are optional. The endpoint uses sensible defaults if not provided
 curl "http://localhost:3000/api/ov/search?arrival_date=2025-11-20&departure_date=2025-11-25&adults=2"
 ```
 
+**With Children:**
+
+```bash
+curl "http://localhost:3000/api/ov/search?arrival_date=2025-11-20&departure_date=2025-11-25&adults=2&children=1&child_ages=2"
+```
+
 **Full Request:**
 
 ```bash
-curl "http://localhost:3000/api/ov/search?region_id=109&arrival_date=2025-11-10&departure_date=2025-11-15&adults=2&currency=USD&language=en&page=1&kinds=resort,hotel&sort=price_asc&map_hotels=true"
+curl "http://localhost:3000/api/ov/search?region_id=109&arrival_date=2025-11-10&departure_date=2025-11-15&adults=2&children=2&child_ages=5,8&currency=USD&language=en&page=1&kinds=resort,hotel&sort=price_asc&map_hotels=true"
 ```
 
 **Minimal Request (All Defaults):**
@@ -68,6 +76,23 @@ curl -X POST "http://localhost:3000/api/ov/search" \
     "kinds": ["resort"],
     "sort": "price_asc",
     "map_hotels": true
+  }'
+```
+
+**With Children:**
+
+```bash
+curl -X POST "http://localhost:3000/api/ov/search" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "region_id": 109,
+    "arrival_date": "2025-11-10",
+    "departure_date": "2025-11-15",
+    "adults": 2,
+    "children": 1,
+    "child_ages": [2],
+    "currency": "USD",
+    "language": "en"
   }'
 ```
 

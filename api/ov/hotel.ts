@@ -44,8 +44,8 @@ export default async function handler(req: Request): Promise<Response> {
       return new Response(JSON.stringify({
         error: "Method not allowed. Use GET or POST.",
         examples: [
-          "GET /api/ov/search?arrival_date=2025-11-20&departure_date=2025-11-25&adults=2",
-          "POST /api/ov/search with JSON body"
+          "GET /api/ov/hotel?hotel=reethi_faru_resort&arrival_date=2026-01-12&departure_date=2026-01-17",
+          "POST /api/ov/hotel with JSON body"
         ],
         timestamp: new Date().toISOString()
       }), { status: 405, headers: corsHeaders });
@@ -73,23 +73,29 @@ export default async function handler(req: Request): Promise<Response> {
       const adultsParam = url.searchParams.get('adults');
       const childrenParam = url.searchParams.get('children');
       const childAgesParam = url.searchParams.get('child_ages');
-      const pageParam = url.searchParams.get('page');
-      const kindsParam = url.searchParams.get('kinds');
-      const mapHotelsParam = url.searchParams.get('map_hotels');
+
+      // Build paxes object
+      let paxes = undefined;
+      if (adultsParam) {
+        const adults = parseInt(adultsParam) || 2;
+        const children = childrenParam ? parseInt(childrenParam) : 0;
+        const child_ages = childAgesParam ? childAgesParam.split(',').map((age: string) => parseInt(age.trim())) : [];
+        
+        const paxObject: any = { adults };
+        if (children > 0 && child_ages.length > 0) {
+          paxObject.child_ages = child_ages.slice(0, children);
+        }
+        paxes = [paxObject];
+      }
 
       params = {
+        hotel: url.searchParams.get('hotel'),
         arrival_date: url.searchParams.get('arrival_date'),
         departure_date: url.searchParams.get('departure_date'),
         region_id: regionIdParam ? parseInt(regionIdParam) : undefined,
-        adults: adultsParam ? parseInt(adultsParam) : undefined,
-        children: childrenParam ? parseInt(childrenParam) : undefined,
-        child_ages: childAgesParam ? childAgesParam.split(',').map((age: string) => parseInt(age.trim())) : undefined,
         currency: url.searchParams.get('currency'),
-        language: url.searchParams.get('language'),
-        page: pageParam ? parseInt(pageParam) : undefined,
-        kinds: kindsParam ? kindsParam.split(',') : undefined,
-        sort: url.searchParams.get('sort'),
-        map_hotels: mapHotelsParam ? mapHotelsParam === 'true' : undefined
+        lang: url.searchParams.get('lang'),
+        paxes: paxes
       };
       
       // Remove null and undefined values
@@ -102,53 +108,51 @@ export default async function handler(req: Request): Promise<Response> {
     }
 
     // Extract parameters with defaults
-    const arrival_date = params.arrival_date || '2025-11-10';
-    const departure_date = params.departure_date || '2025-11-15';
+    const hotel = params.hotel;
+    const arrival_date = params.arrival_date || (() => {
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      return tomorrow.toISOString().split('T')[0];
+    })();
+    const departure_date = params.departure_date || (() => {
+      const nextWeek = new Date(arrival_date);
+      nextWeek.setDate(nextWeek.getDate() + 5);
+      return nextWeek.toISOString().split('T')[0];
+    })();
     const region_id = params.region_id || 109;
-    const adults = params.adults || 2;
-    const children = params.children || 0;
-    const child_ages = params.child_ages || [];
-    const currency = params.currency || 'RUB';
-    const language = params.language || 'en';
-    const page = params.page || 1;
-    const kinds = params.kinds || ['resort'];
-    const sort = params.sort || 'price_asc';
-    const map_hotels = params.map_hotels !== undefined ? params.map_hotels : true;
+    const currency = params.currency || 'USD';
+    const lang = params.lang || 'en';
+    const paxes = params.paxes || [{ adults: 2 }];
+    const search_uuid = params.search_uuid || generateUUID();
 
-    // Generate UUIDs for session
-    const sessionId = generateUUID();
-    const searchUuid = generateUUID();
-
-    // Build the payload for Ostrovok API
-    // Build paxes with children support
-    const paxes: any = { adults };
-    if (children > 0 && child_ages.length > 0) {
-      paxes.child_ages = child_ages.slice(0, children); // Ensure child_ages matches children count
+    // Validate required parameters
+    if (!hotel) {
+      return new Response(JSON.stringify({
+        error: "Missing required parameter: hotel",
+        examples: [
+          "GET /api/ov/hotel?hotel=reethi_faru_resort",
+          "POST /api/ov/hotel with {\"hotel\": \"reethi_faru_resort\"}"
+        ],
+        timestamp: new Date().toISOString()
+      }), { status: 400, headers: corsHeaders });
     }
 
+    // Build the payload for Ostrovok API
     const payload = {
-      session_params: {
-        arrival_date,
-        currency,
-        departure_date,
-        language,
-        paxes: [paxes],
-        region_id,
-        search_uuid: searchUuid
-      },
-      page,
-      filters: { kinds },
-      sort,
-      session_id: sessionId,
-      map_hotels
+      arrival_date,
+      departure_date,
+      hotel,
+      currency,
+      lang,
+      region_id,
+      paxes,
+      search_uuid
     };
 
-    // Make request to Ostrovok API
-    const ostrovokUrl = `https://ostrovok.ru/hotel/search/v2/site/serp?session=${sessionId}`;
+    console.log(`Fetching Ostrovok hotel details: hotel=${hotel}, dates=${arrival_date} to ${departure_date}`);
 
-    console.log(`Fetching Ostrovok hotels: region=${region_id}, dates=${arrival_date} to ${departure_date}`);
-
-    const response = await fetch(ostrovokUrl, {
+    // Make request to Ostrovok.ru
+    const response = await fetch('https://ostrovok.ru/hotel/search/v1/site/hp/search', {
       method: 'POST',
       headers: {
         'accept': 'application/json, text/plain, */*',
@@ -156,11 +160,14 @@ export default async function handler(req: Request): Promise<Response> {
         'cache-control': 'no-cache',
         'content-type': 'application/json',
         'pragma': 'no-cache',
-        'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36',
-        'referer': `https://ostrovok.ru/hotel/maldives/?q=${region_id}&dates=${arrival_date}-${departure_date}&guests=${adults}&search=yes`,
+        'sec-ch-ua': '"Chromium";v="140", "Not=A?Brand";v="24", "Google Chrome";v="140"',
+        'sec-ch-ua-mobile': '?0',
+        'sec-ch-ua-platform': '"Windows"',
         'sec-fetch-dest': 'empty',
         'sec-fetch-mode': 'cors',
-        'sec-fetch-site': 'same-origin'
+        'sec-fetch-site': 'same-origin',
+        'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36',
+        'referer': `https://ostrovok.ru/hotel/maldives/meedhoo_(raa_atoll)/mid8755291/${hotel}/?dates=${arrival_date.replace(/-/g, '.')}-${departure_date.replace(/-/g, '.')}&guests=${paxes[0].adults}`
       },
       body: JSON.stringify(payload)
     });
@@ -178,34 +185,34 @@ export default async function handler(req: Request): Promise<Response> {
       success: true,
       data,
       metadata: {
-        session_id: sessionId,
-        search_uuid: searchUuid,
+        session_id: generateUUID(),
+        search_uuid: search_uuid,
         search_params: {
-          region_id,
+          hotel,
           arrival_date,
           departure_date,
-          adults,
-          children,
-          child_ages,
+          region_id,
           currency,
-          page
+          lang,
+          paxes
         }
       },
-      message: "Hotels fetched successfully from Ostrovok",
+      message: "Hotel details fetched successfully from Ostrovok",
       timestamp: new Date().toISOString()
     }), { status: 200, headers: corsHeaders });
 
   } catch (error) {
-    console.error('Ostrovok search error:', error);
+    console.error('Ostrovok hotel details error:', error);
     let errorMessage = "Unknown error";
     if (error && typeof error === "object" && "message" in error) {
       errorMessage = (error as { message: string }).message;
     }
     
     return new Response(JSON.stringify({
-      error: "Failed to search Ostrovok hotels",
+      error: "Failed to fetch hotel details from Ostrovok",
       details: { originalError: errorMessage },
       timestamp: new Date().toISOString()
     }), { status: 500, headers: corsHeaders });
   }
 }
+   
