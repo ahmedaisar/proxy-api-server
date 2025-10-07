@@ -1,24 +1,22 @@
 {
   "name": "proxy-api-server",
   "version": "1.0.0",
-  "description": "API proxy server built with Bun",
-  "main": "index.ts",
-  "module": "src/index.ts",
+  "description": "API proxy server for Vercel Edge Runtime",
+  "main": "api/health.ts",
+  "type": "module",
   "private": true,
   "scripts": {
-    "start": "bun run index.ts",
-    "dev": "bun --watch index.ts",
-    "build": "bun build index.ts --outdir ./dist --target bun",
-    "clean": "rm -rf dist",
+    "dev": "vercel dev",
+    "build": "tsc --noEmit",
     "type-check": "tsc --noEmit",
     "lint": "echo 'Add linting when needed'",
     "test": "echo 'Add tests when needed'",
     "vercel:dev": "vercel dev",
-    "vercel:deploy": "vercel --prod",
-    "install:vercel": "npm install"
+    "vercel:deploy": "vercel --prod"
   },
   "keywords": [
-    "bun",
+    "vercel",
+    "edge",
     "api",
     "server",
     "proxy",
@@ -28,12 +26,12 @@
   ],
   "author": "0xm1cro",
   "license": "MIT",
-  "dependencies": {
-    "@vercel/node": "^3.0.0"
-  },
+  "dependencies": {},
   "devDependencies": {
-    "@types/bun": "latest",
-    "@types/node": "^20.0.0"
+    "@types/node": "^20.0.0",
+    "@vercel/node": "^3.0.0",
+    "typescript": "^5.0.0",
+    "vercel": "^32.0.0"
   },
   "repository": {
     "type": "git",

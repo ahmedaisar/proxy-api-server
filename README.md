@@ -1,15 +1,209 @@
-# an-list
+# AnexTour API Proxy Server
 
-To install dependencies:
+A high-performance API proxy server built for Vercel Edge Runtime, providing hotel search and details functionality for the AnexTour API.
+
+## ✨ Features
+
+- 🚀 **Edge Runtime**: Deployed on Vercel Edge for global performance
+- 🔒 **Rate Limiting**: 60 requests per minute per IP address
+- 🌐 **CORS Enabled**: Full cross-origin request support
+- 📱 **TypeScript**: Full type safety and IntelliSense
+- ⚡ **Serverless**: Auto-scaling with zero cold starts on Edge Runtime
+
+## 🚀 Quick Start
+
+### Prerequisites
+
+- Node.js 18+
+- Vercel CLI
+- TypeScript
+
+### Installation
 
 ```bash
-bun install
+# Clone the repository
+git clone https://github.com/ahmedaisar/proxy-api-server.git
+cd proxy-api-server
+
+# Install dependencies
+npm install
+
+# Install Vercel CLI (if not already installed)
+npm install -g vercel
 ```
 
-To run:
+### Local Development
 
 ```bash
-bun run index.ts
+# Start local development server
+npm run dev
+# or
+vercel dev
 ```
 
-This project was created using `bun init` in bun v1.2.23. [Bun](https://bun.com) is a fast all-in-one JavaScript runtime.
+Your API will be available at `http://localhost:3000`
+
+### Deployment
+
+```bash
+# Login to Vercel (first time only)
+vercel login
+
+# Deploy to production
+npm run vercel:deploy
+# or
+vercel --prod
+```
+
+## 📚 API Endpoints
+
+### Health Check
+
+```http
+GET /api/health
+```
+
+Returns API health status and version information.
+
+### Search Hotels
+
+```http
+GET /api/search?adults=2&checkin=20251111&checkout=20251114&state=176
+```
+
+**Query Parameters:**
+
+- `adults` - Number of adults (default: 2)
+- `children` - Number of children (default: 0)
+- `checkin` - Check-in date in YYYYMMDD format
+- `checkout` - Check-out date in YYYYMMDD format
+- `state` - Destination state ID
+- `nightmin` - Minimum nights (default: 7)
+- `nightmax` - Maximum nights (default: 7)
+- `currency` - Currency ID (default: 1)
+
+### Get Hotel Details
+
+```http
+GET /api/hotels/[slug]
+```
+
+Replace `[slug]` with the encoded hotel identifier from the search results.
+
+## 🏗️ Project Structure
+
+`
+├── api/                     # Vercel Edge Functions
+│   ├── health.ts           # Health check endpoint
+│   ├── search.ts           # Hotel search endpoint
+│   └── hotels/
+│       └── [slug].ts       # Hotel details by slug
+├── src/                    # Shared utilities
+│   ├── middleware/
+│   │   └── rateLimiter.ts  # Rate limiting middleware
+│   └── types.ts           # TypeScript definitions
+├── vercel.json             # Vercel configuration
+├── tsconfig.json           # TypeScript configuration
+└── package.json            # Dependencies and scripts
+`
+
+## ⚙️ Configuration
+
+### Environment Variables (Optional)
+
+Create a `.env.local` file for local development:
+
+```env
+# Add any environment variables here if needed
+```
+
+### Vercel Configuration
+
+The `vercel.json` file configures:
+
+- Edge Runtime for all API functions
+- Route rewrites for health endpoint
+- Automatic TypeScript compilation
+
+## 🔧 Development Scripts
+
+```bash
+# Local development
+npm run dev
+
+# Type checking
+npm run build
+
+# Deploy to Vercel
+npm run vercel:deploy
+```
+
+## 🔒 Rate Limiting
+
+- **Limit**: 60 requests per minute per IP address
+- **Window**: 60 seconds sliding window
+- **Response**: HTTP 429 with retry information
+
+## 🌐 CORS Policy
+
+All endpoints support:
+
+- **Origins**: `*` (all origins)
+- **Methods**: `GET, POST, PUT, DELETE, OPTIONS`
+- **Headers**: `*` (all headers)
+
+## 📱 Response Format
+
+### Success Response
+
+```json
+{
+  "success": true,
+  "data": { /* API response data */ },
+  "message": "Operation completed successfully",
+  "timestamp": "2025-10-07T12:00:00.000Z"
+}
+```
+
+### Error Response
+
+```json
+{
+  "error": "Error description",
+  "details": { /* Additional error context */ },
+  "timestamp": "2025-10-07T12:00:00.000Z"
+}
+```
+
+## 🚀 Deployment URL
+
+Once deployed, your API will be available at:
+
+`
+https://your-project-name.vercel.app
+`
+
+## 📖 API Documentation
+
+- **Base URL**: `https://your-project.vercel.app`
+- **Content-Type**: `application/json`
+- **Rate Limit**: 60 requests/minute per IP
+
+## 🛠️ Tech Stack
+
+- **Runtime**: Vercel Edge Runtime (Web API based)
+- **Language**: TypeScript
+- **Deployment**: Vercel
+- **Architecture**: Serverless Functions
+
+## 📄 License
+
+MIT License - see [LICENSE](LICENSE) file for details.
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Commit your changes
+4. Push to the branch
+5. Create a Pull Request
