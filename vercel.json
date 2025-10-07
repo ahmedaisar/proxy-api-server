@@ -16,7 +16,7 @@
   ],
   "functions": {
     "api/**/*.ts": {
-      "runtime": "@vercel/bun"
+      "runtime": "bun"
     }
   }
 }
