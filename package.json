@@ -1,0 +1,50 @@
+{
+  "name": "proxy-api-server",
+  "version": "1.0.0",
+  "description": "API proxy server built with Bun",
+  "main": "index.ts",
+  "module": "src/index.ts",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "bun run index.ts",
+    "dev": "bun --watch index.ts",
+    "build": "bun build index.ts --outdir ./dist --target bun",
+    "clean": "rm -rf dist",
+    "type-check": "tsc --noEmit",
+    "lint": "echo 'Add linting when needed'",
+    "test": "echo 'Add tests when needed'",
+    "vercel:dev": "vercel dev",
+    "vercel:deploy": "vercel --prod",
+    "install:vercel": "npm install"
+  },
+  "keywords": [
+    "bun",
+    "api",
+    "server",
+    "anextour",
+    "proxy",
+    "hotels",
+    "tours",
+    "typescript"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "dependencies": {
+    "@vercel/node": "^3.0.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/node": "^20.0.0"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "engines": {
+    "bun": ">=1.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "your-repo-url"
+  }
+}
