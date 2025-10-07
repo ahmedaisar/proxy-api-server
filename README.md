@@ -85,19 +85,44 @@ GET /api/search?adults=2&checkin=20251111&checkout=20251114&state=176
 ### Get Hotel Details
 
 ```http
-GET /api/hotels/[slug]
+GET /api/hotels?slug=/hotels/maldives/arrival-beachspa
 ```
 
-Replace `[slug]` with the encoded hotel identifier from the search results.
+Get detailed information for a specific hotel using its slug from search results.
+
+### Ostrovok Hotel Search (NEW)
+
+```http
+POST /api/ov/search
+```
+
+Search hotels via Ostrovok.ru API with customizable parameters.
+
+**Request Body:**
+```json
+{
+  "region_id": 109,
+  "arrival_date": "2025-11-10",
+  "departure_date": "2025-11-15",
+  "adults": 2,
+  "currency": "USD",
+  "page": 1,
+  "sort": "price_asc"
+}
+```
+
+See [OSTROVOK-API.md](OSTROVOK-API.md) for full documentation.
 
 ## 🏗️ Project Structure
 
-`
+```
 ├── api/                     # Vercel Edge Functions
 │   ├── health.ts           # Health check endpoint
-│   ├── search.ts           # Hotel search endpoint
-│   └── hotels/
-│       └── [slug].ts       # Hotel details by slug
+│   ├── search.ts           # AnexTour hotel search
+│   ├── hotels/
+│   │   └── index.ts        # AnexTour hotel details
+│   └── ov/
+│       └── search.ts       # Ostrovok hotel search
 ├── src/                    # Shared utilities
 │   ├── middleware/
 │   │   └── rateLimiter.ts  # Rate limiting middleware

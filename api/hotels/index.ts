@@ -53,37 +53,41 @@ export default async function handler(req: Request): Promise<Response> {
     // Parse URL and extract hotel slug
     const url = new URL(req.url);
     
-    // Method 1: Check for slug in query parameter (more robust)
+    // Method 1: Check for slug in query parameter (RECOMMENDED - most explicit)
+    // Example: GET /api/hotels?slug=/hotels/maldives/arrival-beachspa
     let hotelSlug = url.searchParams.get('slug');
     
-    // Method 2: If no query param, extract from path (fallback)
+    // Method 2: Extract from path (fallback)
+    // Example: GET /api/hotels/maldives/arrival-beachspa
     if (!hotelSlug) {
-      // Remove the leading '/api/hotels' part and get the remaining path
+      // Remove the '/api/hotels' prefix to get the remaining path
       const path = url.pathname.replace('/api/hotels', '');
+      
       if (path && path.length > 1) {
-        // If path exists and is not just '/', use it as the slug
-        hotelSlug = path.startsWith('/') ? path : `/${path}`;
-      }
-    }
-
-    // Method 3: Handle full slug format from your example: "/hotels/maldives/arrival-beachspa"
-    if (hotelSlug && !hotelSlug.startsWith('/hotels/')) {
-      // If it doesn't start with '/hotels/', assume it needs to be prefixed
-      if (!hotelSlug.startsWith('/')) {
-        hotelSlug = `/hotels/${hotelSlug}`;
-      } else {
-        hotelSlug = `/hotels${hotelSlug}`;
+        // Path like "/maldives/arrival-beachspa" needs to be prefixed with "/hotels"
+        // to match the slug format: "/hotels/maldives/arrival-beachspa"
+        hotelSlug = `/hotels${path}`;
       }
     }
 
     // Validate slug
     if (!hotelSlug || hotelSlug === '/' || hotelSlug === '/hotels/' || hotelSlug.trim() === '') {
       return new Response(JSON.stringify({
-        error: "Hotel slug is required. Provide it as query parameter: ?slug=/hotels/maldives/arrival-beachspa or as path: /api/hotels/maldives/arrival-beachspa",
+        error: "Hotel slug is required",
+        message: "Provide the hotel slug using one of the methods below",
         examples: [
-          "GET /api/hotels?slug=/hotels/maldives/arrival-beachspa",
-          "GET /api/hotels/maldives/arrival-beachspa"
+          {
+            method: "Query Parameter (Recommended)",
+            url: "GET /api/hotels?slug=/hotels/maldives/arrival-beachspa",
+            description: "Pass the full slug from the search endpoint as-is"
+          },
+          {
+            method: "Path Parameter",
+            url: "GET /api/hotels/maldives/arrival-beachspa",
+            description: "Pass only the path after '/hotels/' - we'll add the prefix automatically"
+          }
         ],
+        note: "The slug format from search endpoint is: '/hotels/country/hotel-name'",
         timestamp: new Date().toISOString()
       }), { status: 400, headers: corsHeaders });
     }
