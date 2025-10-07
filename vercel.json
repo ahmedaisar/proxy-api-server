@@ -10,5 +10,15 @@
     "api/hotels/[slug].ts": {
       "runtime": "@godsreveal/vercel-bun@0.2.4"
     }
-  }
+  },
+  "rewrites": [
+    {
+      "source": "/health",
+      "destination": "/api/health"
+    },
+    {
+      "source": "/((?!api/).*)",
+      "destination": "/api/search"
+    }
+  ]
 }
