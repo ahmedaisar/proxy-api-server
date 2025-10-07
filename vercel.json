@@ -16,7 +16,7 @@
   ],
   "functions": {
     "api/**/*.ts": {
-      "runtime": "bun@1.0.0"
+      "runtime": "@godsreveal/vercel-bun@0.2.4"
     }
   }
 }
