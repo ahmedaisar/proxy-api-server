@@ -286,13 +286,15 @@ async function extractHotelData(html: string, masterId: string): Promise<Scraped
       data.name = nameMatch[1].trim().replace(/\s+/g, ' ');
     }
 
-    // Extract rating - enhanced patterns for Ostrovok
-    const ratingMatch = html.match(/button\s+"(\d+\.\d+)"/i) || 
-                       html.match(/generic\s+\[ref=[^>]*\]:\s+"(\d+\.\d+)"/i) ||
+    // Extract rating - enhanced patterns for Ostrovok (fix: look for actual display rating, not star rating)
+    const ratingMatch = html.match(/<span class="TotalRating_content__k5u6S">(\d+[,.]?\d*)<\/span>/i) || 
+                       html.match(/"ratingValue":\s*"(\d+\.?\d*)"/i) ||
                        html.match(/rating['"]\s*:\s*([0-9.]+)/i) || 
                        html.match(/(\d+\.\d+)\s*\/\s*10/i);
     if (ratingMatch && ratingMatch[1]) {
-      data.rating = parseFloat(ratingMatch[1]);
+      // Handle both comma and dot decimal separators
+      const ratingValue = ratingMatch[1].replace(',', '.');
+      data.rating = parseFloat(ratingValue);
     }
 
     // Extract price information - enhanced for Ostrovok pricing
@@ -313,12 +315,18 @@ async function extractHotelData(html: string, masterId: string): Promise<Scraped
       data.location = locationAddressMatch[1].trim().replace(/\s+/g, ' ');
     }
 
-    // Extract images
+    // Extract images (fix: filter out JavaScript files and invalid URLs)
     const images: string[] = [];
     const imageMatches = html.matchAll(/src\s*=\s*['"]([^'"]*(?:jpg|jpeg|png|webp)[^'"]*)['"]/gi);
     for (const match of imageMatches) {
       const imgUrl = match[1];
-      if (imgUrl && !imgUrl.includes('data:') && !images.includes(imgUrl)) {
+      if (imgUrl && 
+          !imgUrl.includes('data:') && 
+          !imgUrl.includes('.js') && 
+          !imgUrl.includes('webpack') &&
+          !imgUrl.includes('chunk') &&
+          imgUrl.startsWith('http') &&
+          !images.includes(imgUrl)) {
         images.push(imgUrl);
       }
     }
@@ -412,21 +420,28 @@ async function extractHotelData(html: string, masterId: string): Promise<Scraped
       hotelFacts.checkout = checkoutMatch[1];
     }
 
-    // Extract children policies
+    // Extract children policies (fix: look for clean policy text, not HTML fragments)
     const childrenPolicies: string[] = [];
-    const childrenMatches = html.matchAll(/children[^.]*\./gi);
-    for (const match of childrenMatches) {
-      const policy = match[0].trim();
-      if (policy.length > 10 && !childrenPolicies.some(p => p.toLowerCase().includes(policy.toLowerCase()))) {
-        childrenPolicies.push(policy);
+    
+    // Look for children policy in structured sections
+    const childrenSectionMatch = html.match(/<div class="PolicyBlock_title__iMvQT[^>]*>Children<\/div>[\s\S]*?<ul class="BasePolicyBlock_list__6QOPP">([\s\S]*?)<\/ul>/i);
+    if (childrenSectionMatch && childrenSectionMatch[1]) {
+      const policyItems = childrenSectionMatch[1].matchAll(/<li class="BasePolicyBlock_listItem__kB5t1"><div[^>]*>([^<]+)<\/div>/g);
+      for (const match of policyItems) {
+        if (match[1] && match[1].trim()) {
+          const cleanPolicy = match[1].trim().replace(/\s+/g, ' ');
+          if (cleanPolicy.length > 10) {
+            childrenPolicies.push(cleanPolicy);
+          }
+        }
       }
     }
     
-    // Also look for age-based policies
-    const agePolicyMatches = html.matchAll(/(\d+)\s+(?:years?\s+)?(?:old|age)[^.]*\./gi);
+    // Alternative: look for age-based policies in policy paragraphs
+    const agePolicyMatches = html.matchAll(/<div class="PolicyBlock_paragraph__2bmGu">([^<]*(?:age|years?|children)[^<]*)<\/div>/gi);
     for (const match of agePolicyMatches) {
-      const policy = match[0].trim();
-      if (policy.length > 10 && !childrenPolicies.includes(policy)) {
+      const policy = match[1]?.trim();
+      if (policy && policy.length > 10 && !childrenPolicies.some(p => p.toLowerCase().includes(policy.toLowerCase().substring(0, 20)))) {
         childrenPolicies.push(policy);
       }
     }
@@ -446,59 +461,50 @@ async function extractHotelData(html: string, masterId: string): Promise<Scraped
       data.description = descMatch[1].trim().substring(0, 500);
     }
 
-    // Extract detailed descriptions using CSS class patterns
+    // Extract detailed descriptions using CSS class patterns (fix: use Russian text)
     const detailedDescription: any = {};
 
-    // Extract location information - target specific CSS classes
-    const locationDescMatch = html.match(/<p class="About_descriptionTitle__POYEB">Location<\/p><p class="About_descriptionParagraph__xWYso">([^<]+)<\/p>/i);
+    // Extract location information - Russian "Расположение"
+    const locationDescMatch = html.match(/<p class="About_descriptionTitle__POYEB">Расположение<\/p><p class="About_descriptionParagraph__xWYso">([^<]+)<\/p>/i);
     if (locationDescMatch && locationDescMatch[1]) {
       detailedDescription.location_info = locationDescMatch[1].trim();
     }
 
-    // Extract "At the resort" section - multiple paragraphs
-    const atResortMatches = html.matchAll(/<p class="About_descriptionTitle__POYEB">At the resort<\/p>((?:<p class="About_descriptionParagraph__xWYso">[^<]+<\/p>)*)/i);
+    // Extract "На курорте" (At the resort) section - multiple paragraphs
     let resortInfo = '';
-    for (const match of atResortMatches) {
-      if (match[1]) {
-        const paragraphMatches = match[1].matchAll(/<p class="About_descriptionParagraph__xWYso">([^<]+)<\/p>/g);
-        const paragraphs: string[] = [];
-        for (const pMatch of paragraphMatches) {
-          if (pMatch[1]) {
-            paragraphs.push(pMatch[1].trim());
-          }
+    const resortSectionMatch = html.match(/<p class="About_descriptionTitle__POYEB">На курорте<\/p>([\s\S]*?)(?=<p class="About_descriptionTitle__POYEB">|<\/div>)/i);
+    if (resortSectionMatch && resortSectionMatch[1]) {
+      const paragraphMatches = resortSectionMatch[1].matchAll(/<p class="About_descriptionParagraph__xWYso">([^<]+)<\/p>/g);
+      const paragraphs: string[] = [];
+      for (const pMatch of paragraphMatches) {
+        if (pMatch[1]) {
+          paragraphs.push(pMatch[1].trim());
         }
-        if (paragraphs.length > 0) {
-          resortInfo = paragraphs.join(' ');
-          break;
-        }
+      }
+      if (paragraphs.length > 0) {
+        resortInfo = paragraphs.join(' ');
       }
     }
     if (resortInfo) {
       detailedDescription.resort_facilities = resortInfo;
     }
 
-    // Alternative pattern for resort facilities if the above doesn't work
-    if (!resortInfo) {
-      const resortFallback = html.match(/At the resort<\/p>[\s\S]*?<p class="About_descriptionParagraph__xWYso">([\s\S]*?)(?=<p class="About_descriptionTitle__POYEB">|<\/div>)/i);
-      if (resortFallback && resortFallback[1]) {
-        // Extract all paragraphs from this section
-        const allParagraphs = resortFallback[1].matchAll(/<p class="About_descriptionParagraph__xWYso">([^<]+)<\/p>/g);
-        const paragraphTexts: string[] = [];
-        for (const pMatch of allParagraphs) {
-          if (pMatch[1]) {
-            paragraphTexts.push(pMatch[1].trim());
-          }
-        }
-        if (paragraphTexts.length > 0) {
-          detailedDescription.resort_facilities = paragraphTexts.join(' ');
-        }
-      }
-    }
-
-    // Extract room amenities information
-    const roomAmenitiesMatch = html.match(/<p class="About_descriptionTitle__POYEB">Room amenities<\/p><p class="About_descriptionParagraph__xWYso">([^<]+)<\/p>/i);
+    // Extract room amenities information - Russian "В номере"
+    const roomAmenitiesMatch = html.match(/<p class="About_descriptionTitle__POYEB">В номере<\/p><p class="About_descriptionParagraph__xWYso">([^<]+)<\/p>/i);
     if (roomAmenitiesMatch && roomAmenitiesMatch[1]) {
       detailedDescription.room_amenities = roomAmenitiesMatch[1].trim();
+    }
+
+    // Combine all description paragraphs for full description
+    const allDescriptionParagraphs = html.matchAll(/<p class="About_descriptionParagraph__xWYso">([^<]+)<\/p>/g);
+    const allDescTexts: string[] = [];
+    for (const match of allDescriptionParagraphs) {
+      if (match[1] && match[1].trim()) {
+        allDescTexts.push(match[1].trim());
+      }
+    }
+    if (allDescTexts.length > 0) {
+      detailedDescription.full_description = allDescTexts.join(' ');
     }
 
     // Extract electrical socket types from Facts section
@@ -520,21 +526,36 @@ async function extractHotelData(html: string, masterId: string): Promise<Scraped
       data.hotel_facts.electrical_sockets = socketTypes;
     }
 
-    // Extract Additional Information section
+    // Extract Additional Information section (fix: look for Russian "Дополнительная информация")
     const additionalInfo: any = {};
     
-    // Extract from "Additional information" section using CSS classes
-    const additionalInfoMatch = html.match(/<h3 class="Section_title__XmYEu">Additional information<\/h3>[\s\S]*?<div class="Section_content__kI4t6">([\s\S]*?)(?=<\/div><\/div>)/i);
+    // Look for both English and Russian versions of "Additional information"
+    const additionalInfoMatch = html.match(/<h3 class="Section_title__XmYEu">(?:Additional information|Дополнительная информация)<\/h3>[\s\S]*?<div class="Section_content__kI4t6">([\s\S]*?)(?=<\/div>(?:<\/div>)*<(?:\/div|div class="Section_wrapper))/i);
     if (additionalInfoMatch && additionalInfoMatch[1]) {
-      // Extract all policy paragraphs
-      const policyMatches = additionalInfoMatch[1].matchAll(/<div class="PolicyBlock_paragraph__2bmGu">([^<]*(?:<[^>]*>[^<]*)*)<\/div>/g);
+      // Extract all policy paragraphs - fix regex to handle clean text
+      const policyMatches = additionalInfoMatch[1].matchAll(/<div class="PolicyBlock_paragraph__2bmGu">([^<]+)<\/div>/g);
       const policies: string[] = [];
       let fullText = '';
       
       for (const match of policyMatches) {
         if (match[1] && match[1].trim()) {
-          const cleanText = match[1].trim().replace(/\s+/g, ' ');
-          if (cleanText.length > 3) { // Filter out empty or very short entries
+          let cleanText = match[1].trim().replace(/\s+/g, ' ');
+          // Remove any remaining HTML entities
+          cleanText = cleanText.replace(/&[a-zA-Z0-9#]+;/g, '').trim();
+          
+          if (cleanText.length > 5) { // Filter out empty or very short entries
+            policies.push(cleanText);
+            fullText += cleanText + ' ';
+          }
+        }
+      }
+      
+      // Also look for table cell content in additional info section
+      const tableCellMatches = additionalInfoMatch[1].matchAll(/<td class="PolicyBlock_policyTableCell__0zZxx">([^<]+)<\/td>/g);
+      for (const match of tableCellMatches) {
+        if (match[1] && match[1].trim()) {
+          let cleanText = match[1].trim().replace(/\s+/g, ' ');
+          if (cleanText.length > 5 && !policies.includes(cleanText)) {
             policies.push(cleanText);
             fullText += cleanText + ' ';
           }
@@ -549,7 +570,8 @@ async function extractHotelData(html: string, masterId: string): Promise<Scraped
         const transferPolicies = policies.filter(p => 
           p.toLowerCase().includes('transfer') || 
           p.toLowerCase().includes('airport') || 
-          p.toLowerCase().includes('flight')
+          p.toLowerCase().includes('flight') ||
+          p.toLowerCase().includes('трансфер')
         );
         
         if (transferPolicies.length > 0) {
@@ -558,10 +580,11 @@ async function extractHotelData(html: string, masterId: string): Promise<Scraped
         
         // Extract pricing information
         const pricingPolicies = policies.filter(p => 
-          p.includes('USD') || 
+          p.includes('USD') || p.includes('₽') || p.includes('$') ||
           p.toLowerCase().includes('cost') || 
           p.toLowerCase().includes('fee') ||
-          p.toLowerCase().includes('supplement')
+          p.toLowerCase().includes('supplement') ||
+          p.toLowerCase().includes('price')
         );
         
         if (pricingPolicies.length > 0) {
