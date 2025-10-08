@@ -1,7 +1,8 @@
 import { RateLimiter } from '../../src/middleware/rateLimiter';
+import * as cheerio from 'cheerio';
 
 export const config = {
-  runtime: 'edge',
+  runtime: 'nodejs',  // Changed to nodejs to support Cheerio
 };
 
 // Create a global rate limiter instance
@@ -254,109 +255,117 @@ export default async function handler(req: Request): Promise<Response> {
   }
 }
 
-// Enhanced HTML parsing function using manual DOM-like parsing
+// Enhanced HTML parsing function using Cheerio
 async function extractEnhancedHotelData(html: string, masterId: string): Promise<EnhancedScrapedHotelData> {
   const data: EnhancedScrapedHotelData = {};
 
   try {
-    // Parse using manual string parsing (since we can't use Cheerio in Edge Runtime)
-    const $ = createSimpleDOMParser(html);
+    // Parse HTML using Cheerio
+    const $ = cheerio.load(html);
 
-    // Extract hotel name
-    const nameElement = $.querySelector('h1') || $.querySelector('title');
-    if (nameElement && nameElement.textContent) {
-      const name = nameElement.textContent.trim();
+    // Extract hotel name using Cheerio
+    const nameElement = $('h1').first();
+    if (nameElement.length > 0) {
+      const name = nameElement.text().trim();
       data.name = name.replace(/\s*[-|]\s*(?:Ostrovok|in\s).*$/i, '').trim();
+    } else {
+      const titleElement = $('title').first();
+      if (titleElement.length > 0) {
+        const name = titleElement.text().trim();
+        data.name = name.replace(/\s*[-|]\s*(?:Ostrovok|in\s).*$/i, '').trim();
+      }
     }
 
-    // Extract rating with enhanced patterns
-    const ratingElement = $.querySelector('.TotalRating_content__k5u6S');
-    if (ratingElement && ratingElement.textContent) {
-      const ratingText = ratingElement.textContent.replace(',', '.');
+    // Extract rating using Cheerio
+    const ratingElement = $('.TotalRating_content__k5u6S').first();
+    if (ratingElement.length > 0) {
+      const ratingText = ratingElement.text().replace(',', '.');
       data.rating = parseFloat(ratingText);
     }
 
-    // Extract price information
-    const priceElement = $.querySelector('[class*="price"]') || $.querySelector('[class*="Price"]');
-    if (priceElement && priceElement.textContent) {
-      const priceText = priceElement.textContent.match(/[₽$]\s*[\d,]+/);
+    // Extract price information using Cheerio
+    const priceElement = $('[class*="price"], [class*="Price"]').first();
+    if (priceElement.length > 0) {
+      const priceText = priceElement.text().match(/[₽$]\s*[\d,]+/);
       if (priceText) {
         data.price = priceText[0];
       }
     }
 
-    // Extract images with better filtering
+    // Extract hotel images using Cheerio
     const images: string[] = [];
-    const imageElements = $.querySelectorAll('img[src*="cdn.worldota.net"]');
-    
-    for (const img of imageElements) {
-      const src = img.getAttribute('src');
+    $('img[src*="cdn.worldota.net"]').each((_, img) => {
+      const src = $(img).attr('src');
       if (src && 
           !src.includes('data:') && 
           !src.includes('.js') && 
+          !src.includes('webpack') &&
           src.match(/\.(jpg|jpeg|png|webp)/) &&
           !images.includes(src)) {
         images.push(src);
       }
-    }
+    });
     
     if (images.length > 0) {
       data.images = images.slice(0, 15);
     }
 
-    // Extract enhanced room information with potential room galleries
+    // Extract enhanced room information and room galleries using Cheerio
     const rooms: any[] = [];
     const roomGalleries: any[] = [];
 
-    // Look for room sections that might trigger popups
-    const roomSections = $.querySelectorAll('[class*="Room"], [class*="room"], [data-room], button[class*="room"]');
-    
-    for (const roomSection of roomSections) {
+    // Look for room cards or sections that might have clickable elements
+    $('[class*="Room"], [class*="room"], [data-room], button[class*="room"]').each((_, roomSection) => {
+      const $roomSection = $(roomSection);
       const roomData: any = {};
       
       // Extract room type from various possible locations
-      const roomTypeElement = roomSection.querySelector('[class*="title"], [class*="name"], h2, h3, h4') || roomSection;
-      if (roomTypeElement) {
-        const roomType = roomTypeElement.textContent.trim();
+      const roomTypeElement = $roomSection.find('[class*="title"], [class*="name"], h2, h3, h4').first();
+      if (roomTypeElement.length > 0) {
+        const roomType = roomTypeElement.text().trim();
+        if (roomType && roomType.length > 3 && roomType.length < 100) {
+          roomData.type = roomType;
+        }
+      } else {
+        // Try to get text from the element itself
+        const roomType = $roomSection.text().trim();
         if (roomType && roomType.length > 3 && roomType.length < 100) {
           roomData.type = roomType;
         }
       }
 
       // Extract room price
-      const roomPriceElement = roomSection.querySelector('[class*="price"], [class*="Price"]');
-      if (roomPriceElement) {
-        const priceMatch = roomPriceElement.textContent.match(/[₽$]\s*[\d,]+/);
+      const roomPriceElement = $roomSection.find('[class*="price"], [class*="Price"]').first();
+      if (roomPriceElement.length > 0) {
+        const priceMatch = roomPriceElement.text().match(/[₽$]\s*[\d,]+/);
         if (priceMatch) {
           roomData.price = priceMatch[0];
         }
       }
 
       // Extract room amenities
-      const amenityElements = roomSection.querySelectorAll('[class*="amenity"], [class*="feature"]');
       const roomAmenities: string[] = [];
-      
-      for (const amenity of amenityElements) {
-        const amenityText = amenity.textContent.trim();
+      $roomSection.find('[class*="amenity"], [class*="feature"]').each((_, amenity) => {
+        const amenityText = $(amenity).text().trim();
         if (amenityText && amenityText.length > 2 && amenityText.length < 50) {
           roomAmenities.push(amenityText);
         }
-      }
+      });
       
       if (roomAmenities.length > 0) {
         roomData.amenities = roomAmenities;
       }
 
       // Extract bed type information
-      const bedElement = roomSection.querySelector('[class*="bed"], [class*="Bed"]');
-      if (bedElement) {
-        roomData.bed_type = bedElement.textContent.trim();
+      const bedElement = $roomSection.find('[class*="bed"], [class*="Bed"]').first();
+      if (bedElement.length > 0) {
+        roomData.bed_type = bedElement.text().trim();
       }
 
       // Extract room size
-      const sizeElement = roomSection.querySelector('[class*="size"], [class*="m²"], [class*="sqm"]');
-      if (sizeElement) {
-        const sizeMatch = sizeElement.textContent.match(/\d+\s*m²/);
+      const sizeElement = $roomSection.find('[class*="size"], [class*="m²"], [class*="sqm"]').first();
+      if (sizeElement.length > 0) {
+        const sizeMatch = sizeElement.text().match(/\d+\s*m²/);
         if (sizeMatch) {
           roomData.size = sizeMatch[0];
         }
@@ -365,102 +374,158 @@ async function extractEnhancedHotelData(html: string, masterId: string): Promise
       if (Object.keys(roomData).length > 0) {
         rooms.push(roomData);
       }
-    }
+    });
 
     if (rooms.length > 0) {
       data.rooms = rooms;
     }
 
-    // Extract potential room gallery data from embedded JavaScript or data attributes
-    const scriptElements = $.querySelectorAll('script');
-    
-    for (const script of scriptElements) {
-      const scriptContent = script.textContent;
+    // Extract room galleries from DesktopPopup structures using Cheerio
+    $('.DesktopPopup_root__iVcfK').each((_, popup) => {
+      const $popup = $(popup);
       
-      // Look for room gallery data in JavaScript
-      const roomGalleryMatch = scriptContent.match(/room.*gallery.*images/gi);
-      if (roomGalleryMatch) {
-        // Try to extract image URLs from the script
-        const imageUrls = scriptContent.match(/https:\/\/cdn\.worldota\.net\/[^"']+\.(jpg|jpeg|png|webp)/gi);
-        if (imageUrls && imageUrls.length > 0) {
-          roomGalleries.push({
-            room_type: "Detected from JS",
-            images: imageUrls.slice(0, 10),
-            thumbnails: imageUrls.slice(0, 5)
-          });
-        }
-      }
-    }
-
-    // Extract room galleries from potential popup structures in HTML
-    const popupElements = $.querySelectorAll('[class*="popup"], [class*="Popup"], [class*="modal"], [class*="Modal"]');
-    
-    for (const popup of popupElements) {
-      const titleElement = popup.querySelector('[class*="title"], h1, h2, h3, h4');
-      const imageElements = popup.querySelectorAll('img[src*="cdn.worldota.net"]');
+      // Get room type from popup title
+      const roomTitle = $popup.find('.DesktopPopup_title__KCelg').first().text().trim();
       
-      if (titleElement && imageElements.length > 0) {
-        const roomType = titleElement.textContent.trim();
-        const images: string[] = [];
+      if (roomTitle) {
+        const roomImages: string[] = [];
         const thumbnails: string[] = [];
         
-        for (const img of imageElements) {
-          const src = img.getAttribute('src');
-          if (src && src.match(/\.(jpg|jpeg|png|webp)/)) {
-            images.push(src);
-            
-            // Create thumbnail URL (Ostrovok pattern)
-            const thumbnailUrl = src.replace(/\/\d+x\d+\//, '/240x240/');
-            if (!thumbnails.includes(thumbnailUrl)) {
-              thumbnails.push(thumbnailUrl);
-            }
+        // Extract images from ImagesLayout_wrapper
+        $popup.find('.ImagesLayout_wrapper__yh9dY img').each((_, img) => {
+          const src = $(img).attr('src');
+          if (src && src.includes('cdn.worldota.net') && src.match(/\.(jpg|jpeg|png|webp)/)) {
+            roomImages.push(src);
           }
-        }
+        });
         
-        if (images.length > 0) {
+        // Extract images from Gallery slides
+        $popup.find('.Gallery_slide__D99ch img').each((_, img) => {
+          const src = $(img).attr('src');
+          if (src && src.includes('cdn.worldota.net') && src.match(/\.(jpg|jpeg|png|webp)/) && !roomImages.includes(src)) {
+            roomImages.push(src);
+          }
+        });
+        
+        // Extract thumbnails from Thumbnails section
+        $popup.find('.Thumbnails_root__RgHkA img').each((_, img) => {
+          const src = $(img).attr('src');
+          if (src && src.includes('cdn.worldota.net') && src.match(/\.(jpg|jpeg|png|webp)/)) {
+            thumbnails.push(src);
+          }
+        });
+        
+        if (roomImages.length > 0) {
           roomGalleries.push({
-            room_type: roomType,
-            images: images.slice(0, 15),
+            room_type: roomTitle,
+            images: roomImages.slice(0, 15),
             thumbnails: thumbnails.slice(0, 8)
           });
         }
       }
-    }
+    });
 
     if (roomGalleries.length > 0) {
       data.room_galleries = roomGalleries;
     }
 
-    // Extract all other data using similar enhanced patterns
-    // (amenities, reviews, policies, etc. - using the same logic as original but with better parsing)
-    
-    // Extract amenities
+    // Extract additional room gallery data from JavaScript using Cheerio
+    $('script').each((_, script) => {
+      const scriptContent = $(script).html();
+      
+      if (scriptContent) {
+        // Look for room gallery data in JavaScript
+        const roomGalleryMatch = scriptContent.match(/room.*gallery.*images/gi);
+        if (roomGalleryMatch) {
+          // Try to extract image URLs from the script
+          const imageUrls = scriptContent.match(/https:\/\/cdn\.worldota\.net\/[^"']+\.(jpg|jpeg|png|webp)/gi);
+          if (imageUrls && imageUrls.length > 0) {
+            roomGalleries.push({
+              room_type: "Detected from JS",
+              images: imageUrls.slice(0, 10),
+              thumbnails: imageUrls.slice(0, 5)
+            });
+          }
+        }
+      }
+    });
+
+    // Extract amenities using Cheerio
     const amenities: string[] = [];
-    const amenityElements = $.querySelectorAll('[class*="amenity"], [class*="Amenity"], [class*="feature"]');
-    
-    for (const amenity of amenityElements) {
-      const amenityText = amenity.textContent.trim();
+    $('[class*="amenity"], [class*="Amenity"], [class*="feature"]').each((_, amenity) => {
+      const amenityText = $(amenity).text().trim();
       if (amenityText && amenityText.length > 2 && amenityText.length < 50 && 
           !amenityText.includes('ref=') && !amenities.includes(amenityText)) {
         amenities.push(amenityText);
       }
-    }
+    });
     
     if (amenities.length > 0) {
       data.amenities = amenities.slice(0, 25);
     }
 
-    // Extract review count
-    const reviewElements = $.querySelectorAll('[class*="review"], [class*="Review"]');
-    for (const review of reviewElements) {
-      const reviewMatch = review.textContent.match(/(\d+)\s+reviews/i);
-      if (reviewMatch) {
+    // Extract review count using Cheerio
+    $('[class*="review"], [class*="Review"]').each((_, review) => {
+      const reviewMatch = $(review).text().match(/(\d+)\s+reviews/i);
+      if (reviewMatch && reviewMatch[1]) {
         data.review_count = parseInt(reviewMatch[1]);
+        return false; // Break out of the loop
+      }
+    });
+
+    // Extract additional hotel details using more comprehensive Cheerio parsing
+    
+    // Extract location/address
+    const locationSelectors = [
+      'address', 
+      '[class*="address"]', 
+      '[class*="location"]',
+      '[class*="Location"]'
+    ];
+    
+    for (const selector of locationSelectors) {
+      const locationElement = $(selector).first();
+      if (locationElement.length > 0) {
+        data.location = locationElement.text().trim();
         break;
       }
     }
 
-    console.log(`✅ Enhanced extraction completed: name=${data.name}, rating=${data.rating}, rooms=${rooms.length}, galleries=${roomGalleries.length}`);
+    // Extract hotel facts (check-in/out times, room count, etc.)
+    const hotelFacts: any = {};
+    
+    // Check-in time
+    const checkinElement = $(':contains("Check-in")').next();
+    if (checkinElement.length > 0) {
+      const checkinMatch = checkinElement.text().match(/(\d{2}:\d{2})/);
+      if (checkinMatch) {
+        hotelFacts.checkin = checkinMatch[1];
+      }
+    }
+    
+    // Check-out time
+    const checkoutElement = $(':contains("Check-out")').next();
+    if (checkoutElement.length > 0) {
+      const checkoutMatch = checkoutElement.text().match(/(\d{2}:\d{2})/);
+      if (checkoutMatch) {
+        hotelFacts.checkout = checkoutMatch[1];
+      }
+    }
+    
+    // Room count
+    const roomCountElement = $(':contains("rooms")');
+    if (roomCountElement.length > 0) {
+      const roomCountMatch = roomCountElement.text().match(/(\d+)\s+rooms/i);
+      if (roomCountMatch && roomCountMatch[1]) {
+        hotelFacts.rooms = parseInt(roomCountMatch[1]);
+      }
+    }
+    
+    if (Object.keys(hotelFacts).length > 0) {
+      data.hotel_facts = hotelFacts;
+    }
+
+    console.log(`✅ Enhanced Cheerio extraction completed: name=${data.name}, rating=${data.rating}, rooms=${rooms.length}, galleries=${roomGalleries.length}, amenities=${amenities.length}`);
 
   } catch (error) {
     console.error('❌ Error in enhanced parsing:', error);
@@ -469,53 +534,5 @@ async function extractEnhancedHotelData(html: string, masterId: string): Promise
   return data;
 }
 
-// Simple DOM-like parser for Edge Runtime (without external dependencies)
-function createSimpleDOMParser(html: string) {
-  return {
-    querySelector: (selector: string) => {
-      // Simple implementation for basic selectors
-      if (selector.startsWith('.')) {
-        const className = selector.slice(1);
-        const match = html.match(new RegExp(`<[^>]+class="[^"]*${className}[^"]*"[^>]*>([^<]*)<`, 'i'));
-        return match ? { textContent: match[1], getAttribute: (attr: string) => null } : null;
-      } else if (selector === 'h1') {
-        const match = html.match(/<h1[^>]*>([^<]+)<\/h1>/i);
-        return match ? { textContent: match[1] } : null;
-      } else if (selector === 'title') {
-        const match = html.match(/<title>([^<]+)<\/title>/i);
-        return match ? { textContent: match[1] } : null;
-      }
-      return null;
-    },
-    
-    querySelectorAll: (selector: string) => {
-      const results: any[] = [];
-      
-      if (selector === 'img[src*="cdn.worldota.net"]') {
-        const matches = html.matchAll(/<img[^>]+src\s*=\s*['"]([^'"]*cdn\.worldota\.net[^'"]*)['"]/gi);
-        for (const match of matches) {
-          results.push({
-            getAttribute: (attr: string) => attr === 'src' ? match[1] : null,
-            textContent: ''
-          });
-        }
-      } else if (selector === 'script') {
-        const matches = html.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/gi);
-        for (const match of matches) {
-          results.push({
-            textContent: match[1]
-          });
-        }
-      } else if (selector.includes('amenity') || selector.includes('Amenity')) {
-        const matches = html.matchAll(/<[^>]+class="[^"]*(?:amenity|Amenity)[^"]*"[^>]*>([^<]*)</gi);
-        for (const match of matches) {
-          results.push({
-            textContent: match[1]
-          });
-        }
-      }
-      
-      return results;
-    }
-  };
-}
+// Note: This enhanced scraper uses Cheerio for proper HTML parsing
+// and focuses on extracting room gallery information from DesktopPopup structures

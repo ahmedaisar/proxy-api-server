@@ -222,13 +222,13 @@ Enhanced scraper with better parsing capabilities and room gallery extraction.
 - `url` - Direct Ostrovok URL (alternative to individual parameters)
 
 **Enhanced Features:**
-- Better HTML parsing with DOM-like structure
-- Enhanced room information extraction
-- Room gallery detection and organization
-- Improved amenity and feature extraction
-- Better error handling and data validation
-- Room-specific pricing and policies
-- Thumbnail generation for room images
+- **Cheerio-based HTML parsing** for accurate DOM manipulation
+- **Room gallery extraction** from DesktopPopup structures
+- **Enhanced room detection** with detailed amenities and features
+- **Image gallery organization** with thumbnails and high-res images
+- **Better data extraction** for hotel facts, policies, and reviews
+- **Robust error handling** and data validation
+- **Room-specific information** including bed types, sizes, and pricing
 
 **Response includes all basic scraper data plus:**
 - `room_galleries` - Organized room image galleries with thumbnails
