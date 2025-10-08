@@ -122,7 +122,7 @@ export default async function handler(req: Request): Promise<Response> {
 
     // Parse parameters based on request method
     if (req.method === 'GET') {
-      const url = new URL(req.url);
+      const url = new URL(req.url, `https://${req.headers.get('host') || 'localhost'}`);
       
       // Option 1: Direct URL parameter
       const directUrl = url.searchParams.get('url');
