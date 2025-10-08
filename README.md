@@ -203,6 +203,39 @@ Scrape detailed hotel information directly from Ostrovok hotel pages.
 - Location details
 - Contact information
 
+---
+
+### 7. Enhanced Ostrovok Scraper
+
+```http
+GET /api/ov/scraper?master_id=6669997&ota_hotel_id=canareef_resort_maldives&region_slug=maldives/addu_atoll
+POST /api/ov/scraper
+```
+
+Enhanced scraper with better parsing capabilities and room gallery extraction.
+
+**GET Query Parameters / POST Body:**
+
+- `master_id` - Hotel master ID (required)
+- `ota_hotel_id` - OTA hotel identifier (required)  
+- `region_slug` - Region slug path (required)
+- `url` - Direct Ostrovok URL (alternative to individual parameters)
+
+**Enhanced Features:**
+- Better HTML parsing with DOM-like structure
+- Enhanced room information extraction
+- Room gallery detection and organization
+- Improved amenity and feature extraction
+- Better error handling and data validation
+- Room-specific pricing and policies
+- Thumbnail generation for room images
+
+**Response includes all basic scraper data plus:**
+- `room_galleries` - Organized room image galleries with thumbnails
+- Enhanced `rooms` array with detailed amenities, bed types, sizes
+- Better structured amenity categorization
+- Improved data quality and accuracy
+
 ## 🏗️ Project Structure
 
 ```
