@@ -9,12 +9,23 @@ export const config = {
 // Create a global rate limiter instance
 //const rateLimiter = new RateLimiter(60, 60_000);
 
-function getClientIp(req: Request): string {
+// Helper to safely access headers in both Edge (Headers) and Node (object) environments
+function getHeader(req: any, name: string): string | undefined {
+  if (!req) return undefined;
+  const headers: any = req.headers;
+  if (!headers) return undefined;
+  if (typeof headers.get === 'function') {
+    try { return headers.get(name) || headers.get(name.toLowerCase()) || undefined; } catch { /* noop */ }
+  }
+  return headers[name] || headers[name.toLowerCase()];
+}
+
+function getClientIp(req: any): string {
   return (
-    req.headers.get("x-forwarded-for") ||
-    req.headers.get("cf-connecting-ip") ||
-    req.headers.get("x-real-ip") ||
-    "unknown"
+    getHeader(req, 'x-forwarded-for') ||
+    getHeader(req, 'cf-connecting-ip') ||
+    getHeader(req, 'x-real-ip') ||
+    'unknown'
   );
 }
 
@@ -122,23 +133,28 @@ export default async function handler(req: Request): Promise<Response> {
 
     // Parse parameters based on request method
     if (req.method === 'GET') {
-      const url = new URL(req.url, `https://${req.headers.get('host') || 'localhost'}`);
-      
+      // Robust query parsing that works with relative or absolute URLs
+      let searchParams: URLSearchParams;
+      const rawUrl: string = (req as any).url || '';
+      if (rawUrl.startsWith('http')) {
+        try { searchParams = new URL(rawUrl).searchParams; } catch { searchParams = new URLSearchParams(); }
+      } else {
+        const queryPart = rawUrl.includes('?') ? rawUrl.substring(rawUrl.indexOf('?') + 1) : '';
+        searchParams = new URLSearchParams(queryPart);
+      }
+
       // Option 1: Direct URL parameter
-      const directUrl = url.searchParams.get('url');
+      const directUrl = searchParams.get('url');
       if (directUrl) {
         hotelUrl = directUrl;
-        // Extract master_id from URL for logging
         const midMatch = directUrl.match(/mid(\d+)/);
         masterId = midMatch?.[1] || 'unknown';
         otaHotelId = 'from-url';
         regionSlug = 'from-url';
       } else {
-        // Option 2: Individual parameters
-        masterId = url.searchParams.get('master_id') || '';
-        otaHotelId = url.searchParams.get('ota_hotel_id') || '';
-        regionSlug = url.searchParams.get('region_slug') || '';
-        
+        masterId = searchParams.get('master_id') || '';
+        otaHotelId = searchParams.get('ota_hotel_id') || '';
+        regionSlug = searchParams.get('region_slug') || '';
         if (masterId && otaHotelId && regionSlug) {
           hotelUrl = `https://ostrovok.ru/hotel/${regionSlug}/mid${masterId}/${otaHotelId}/`;
         } else {
@@ -147,7 +163,7 @@ export default async function handler(req: Request): Promise<Response> {
             error: 'Missing required parameters for GET request',
             message: 'Provide either "url" parameter OR all of: master_id, ota_hotel_id, region_slug',
             examples: [
-              { 
+              {
                 method: 'GET',
                 option_1: '/api/ov/scraper?url=https://ostrovok.ru/hotel/maldives/addu_atoll/mid6669997/canareef_resort_maldives/',
                 option_2: '/api/ov/scraper?master_id=6669997&ota_hotel_id=canareef_resort_maldives&region_slug=maldives/addu_atoll'
