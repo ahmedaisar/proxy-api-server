@@ -55,6 +55,11 @@ interface ScrapedHotelData {
     type?: string;
     price?: string;
     description?: string;
+    images?: string[];
+  }[];
+  room_images?: {
+    room_type?: string;
+    images?: string[];
   }[];
   hotel_facts?: {
     rooms?: number;
@@ -632,7 +637,72 @@ async function extractHotelData(html: string, masterId: string): Promise<Scraped
       }
     }
 
-    console.log(`✅ Extracted data: name=${data.name}, rating=${data.rating}, images=${data.images?.length || 0}`);
+    // Extract room images from DesktopPopup gallery sections
+    const roomImages: { room_type?: string; images?: string[] }[] = [];
+    
+    // Find all DesktopPopup sections that contain room galleries
+    const roomPopupMatches = html.matchAll(/<div class="DesktopPopup_root__iVcfK">[\s\S]*?<div class="DesktopPopup_title__KCelg">([^<]+)<\/div>[\s\S]*?<ul class="ImagesLayout_wrapper__yh9dY[^"]*">([\s\S]*?)<\/ul>[\s\S]*?<\/div>/gi);
+    
+    for (const popupMatch of roomPopupMatches) {
+      const roomType = popupMatch[1]?.trim();
+      const galleryContent = popupMatch[2];
+      
+      if (roomType && galleryContent) {
+        const images: string[] = [];
+        
+        // Extract image URLs from the gallery
+        const imageMatches = galleryContent.matchAll(/src\s*=\s*['"]([^'"]*cdn\.worldota\.net[^'"]*(?:jpg|jpeg|png|webp)[^'"]*)['"]/gi);
+        
+        for (const imgMatch of imageMatches) {
+          const imgUrl = imgMatch[1];
+          if (imgUrl && !imgUrl.includes('data:') && !images.includes(imgUrl)) {
+            images.push(imgUrl);
+          }
+        }
+        
+        // Also extract from srcset attributes for higher quality images
+        const srcsetMatches = galleryContent.matchAll(/srcset\s*=\s*['"]([^'"]*cdn\.worldota\.net[^'"]*(?:jpg|jpeg|png|webp)[^'"]*)['"]/gi);
+        
+        for (const srcsetMatch of srcsetMatches) {
+          const imgUrl = srcsetMatch[1];
+          if (imgUrl && !imgUrl.includes('data:') && !images.includes(imgUrl)) {
+            images.push(imgUrl);
+          }
+        }
+        
+        if (images.length > 0) {
+          roomImages.push({
+            room_type: roomType,
+            images: images.slice(0, 15) // Limit to 15 images per room type
+          });
+        }
+      }
+    }
+    
+    // Also try to extract room images from Gallery slides if available
+    const gallerySlideMatches = html.matchAll(/<div class="Gallery_slide__D99ch[^"]*">[\s\S]*?<img[^>]+src\s*=\s*['"]([^'"]*cdn\.worldota\.net[^'"]*(?:jpg|jpeg|png|webp)[^'"]*)['"]/gi);
+    
+    let galleryImages: string[] = [];
+    for (const slideMatch of gallerySlideMatches) {
+      const imgUrl = slideMatch[1];
+      if (imgUrl && !imgUrl.includes('data:') && !galleryImages.includes(imgUrl)) {
+        galleryImages.push(imgUrl);
+      }
+    }
+    
+    // If we found gallery images but no specific room popups, add them as general room images
+    if (galleryImages.length > 0 && roomImages.length === 0) {
+      roomImages.push({
+        room_type: "Hotel Room Gallery",
+        images: galleryImages.slice(0, 15)
+      });
+    }
+    
+    if (roomImages.length > 0) {
+      data.room_images = roomImages;
+    }
+
+    console.log(`✅ Extracted data: name=${data.name}, rating=${data.rating}, images=${data.images?.length || 0}, room_images=${roomImages.length} room types`);
 
   } catch (error) {
     console.error('❌ Error parsing HTML:', error);

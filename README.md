@@ -197,7 +197,8 @@ Scrape detailed hotel information directly from Ostrovok hotel pages.
 **Response includes:**
 - Hotel name, rating, and reviews
 - Detailed descriptions and amenities
-- Image galleries
+- Image galleries (hotel and room-specific)
+- Room images organized by room type
 - Policy information
 - Location details
 - Contact information
