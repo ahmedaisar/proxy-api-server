@@ -9,23 +9,12 @@ export const config = {
 // Create a global rate limiter instance
 //const rateLimiter = new RateLimiter(60, 60_000);
 
-// Helper to safely access headers in both Edge (Headers) and Node (object) environments
-function getHeader(req: any, name: string): string | undefined {
-  if (!req) return undefined;
-  const headers: any = req.headers;
-  if (!headers) return undefined;
-  if (typeof headers.get === 'function') {
-    try { return headers.get(name) || headers.get(name.toLowerCase()) || undefined; } catch { /* noop */ }
-  }
-  return headers[name] || headers[name.toLowerCase()];
-}
-
-function getClientIp(req: any): string {
+function getClientIp(req: Request): string {
   return (
-    getHeader(req, 'x-forwarded-for') ||
-    getHeader(req, 'cf-connecting-ip') ||
-    getHeader(req, 'x-real-ip') ||
-    'unknown'
+    req.headers.get("x-forwarded-for") ||
+    req.headers.get("cf-connecting-ip") ||
+    req.headers.get("x-real-ip") ||
+    "unknown"
   );
 }
 
@@ -126,35 +115,32 @@ export default async function handler(req: Request): Promise<Response> {
     //   }), { status: 429, headers: corsHeaders });
     // }
 
-    let hotelUrl: string;
-    let masterId: string;
-    let otaHotelId: string;
-    let regionSlug: string;
+  let hotelUrl: string;
+  let masterId: string;
+  let otaHotelId: string;
+  let regionSlug: string;
+  let debug = false;
 
     // Parse parameters based on request method
     if (req.method === 'GET') {
-      // Robust query parsing that works with relative or absolute URLs
-      let searchParams: URLSearchParams;
-      const rawUrl: string = (req as any).url || '';
-      if (rawUrl.startsWith('http')) {
-        try { searchParams = new URL(rawUrl).searchParams; } catch { searchParams = new URLSearchParams(); }
-      } else {
-        const queryPart = rawUrl.includes('?') ? rawUrl.substring(rawUrl.indexOf('?') + 1) : '';
-        searchParams = new URLSearchParams(queryPart);
-      }
-
+      const url = new URL(req.url, `https://${req.headers.get('host') || 'localhost'}`);
+      debug = url.searchParams.get('debug') === '1';
+      
       // Option 1: Direct URL parameter
-      const directUrl = searchParams.get('url');
+      const directUrl = url.searchParams.get('url');
       if (directUrl) {
         hotelUrl = directUrl;
+        // Extract master_id from URL for logging
         const midMatch = directUrl.match(/mid(\d+)/);
         masterId = midMatch?.[1] || 'unknown';
         otaHotelId = 'from-url';
         regionSlug = 'from-url';
       } else {
-        masterId = searchParams.get('master_id') || '';
-        otaHotelId = searchParams.get('ota_hotel_id') || '';
-        regionSlug = searchParams.get('region_slug') || '';
+        // Option 2: Individual parameters
+        masterId = url.searchParams.get('master_id') || '';
+        otaHotelId = url.searchParams.get('ota_hotel_id') || '';
+        regionSlug = url.searchParams.get('region_slug') || '';
+        
         if (masterId && otaHotelId && regionSlug) {
           hotelUrl = `https://ostrovok.ru/hotel/${regionSlug}/mid${masterId}/${otaHotelId}/`;
         } else {
@@ -163,7 +149,7 @@ export default async function handler(req: Request): Promise<Response> {
             error: 'Missing required parameters for GET request',
             message: 'Provide either "url" parameter OR all of: master_id, ota_hotel_id, region_slug',
             examples: [
-              {
+              { 
                 method: 'GET',
                 option_1: '/api/ov/scraper?url=https://ostrovok.ru/hotel/maldives/addu_atoll/mid6669997/canareef_resort_maldives/',
                 option_2: '/api/ov/scraper?master_id=6669997&ota_hotel_id=canareef_resort_maldives&region_slug=maldives/addu_atoll'
@@ -175,6 +161,7 @@ export default async function handler(req: Request): Promise<Response> {
     } else {
       // POST request handling (similar to existing scrape.ts)
       const body = await req.json();
+      debug = !!body.debug;
       
       if (body.url) {
         hotelUrl = body.url;
@@ -245,9 +232,9 @@ export default async function handler(req: Request): Promise<Response> {
     console.log(`✅ Fetched HTML content (${html.length} chars)`);
 
     // Parse HTML and extract enhanced structured data
-    const scrapedData = await extractEnhancedHotelData(html, masterId);
+    const scrapedData = await extractEnhancedHotelData(html, masterId, { debug });
 
-    return new Response(JSON.stringify({
+    const responsePayload: any = {
       success: true,
       data: {
         master_id: masterId,
@@ -256,10 +243,12 @@ export default async function handler(req: Request): Promise<Response> {
         source_url: hotelUrl,
         scraped_at: new Date().toISOString(),
         hotel: scrapedData,
-        scraper_version: "enhanced_v1.0"
+        scraper_version: "enhanced_v1.1"
       },
       message: 'Enhanced hotel data scraped successfully'
-    }), { status: 200, headers: corsHeaders });
+    };
+    if (debug) responsePayload.debug = scrapedData.__debug; // attach debug diagnostics
+    return new Response(JSON.stringify(responsePayload), { status: 200, headers: corsHeaders });
 
   } catch (error) {
     console.error('❌ Enhanced Scraping error:', error);
@@ -273,8 +262,15 @@ export default async function handler(req: Request): Promise<Response> {
 }
 
 // Enhanced HTML parsing function using Cheerio
-async function extractEnhancedHotelData(html: string, masterId: string): Promise<EnhancedScrapedHotelData> {
-  const data: EnhancedScrapedHotelData = {};
+interface ExtractionOptions { debug?: boolean }
+
+async function extractEnhancedHotelData(html: string, masterId: string, opts: ExtractionOptions = {}): Promise<EnhancedScrapedHotelData & { __debug?: any }> {
+  const data: EnhancedScrapedHotelData & { __debug?: any } = {};
+  const debugInfo: any = {
+    phases: [],
+    counts: {},
+    warnings: []
+  };
 
   try {
     // Parse HTML using Cheerio
@@ -397,7 +393,8 @@ async function extractEnhancedHotelData(html: string, masterId: string): Promise
       data.rooms = rooms;
     }
 
-    // Extract room galleries from DesktopPopup structures using Cheerio
+    // Extract room galleries from DesktopPopup structures using Cheerio (Phase 1)
+    let desktopPopupCount = 0;
     $('.DesktopPopup_root__iVcfK').each((_, popup) => {
       const $popup = $(popup);
       
@@ -439,11 +436,125 @@ async function extractEnhancedHotelData(html: string, masterId: string): Promise
             thumbnails: thumbnails.slice(0, 8)
           });
         }
+        desktopPopupCount++;
       }
     });
 
     if (roomGalleries.length > 0) {
       data.room_galleries = roomGalleries;
+    }
+
+    debugInfo.counts.desktopPopupGalleries = desktopPopupCount;
+
+    // Phase 2: Fallback - BaseGallery roots (thumbnails before click)
+    if (!data.room_galleries || data.room_galleries.length === 0) {
+      const baseGalleryRooms: any[] = [];
+      $('[class^="BaseGallery_root"], [class*=" BaseGallery_root"]').each((_, gal) => {
+        const $gal = $(gal);
+        const parentText = $gal.parent().text().trim().split('\n')[0];
+        const potentialTitle = parentText && parentText.length < 80 ? parentText : undefined;
+        const imgs: string[] = [];
+        $gal.find('img').each((_, img) => {
+          const src = $(img).attr('src');
+            if (src && src.includes('cdn.worldota.net') && /\.(jpg|jpeg|png|webp)/.test(src) && !imgs.includes(src)) {
+              imgs.push(src);
+            }
+        });
+        if (imgs.length) {
+          baseGalleryRooms.push({ room_type: potentialTitle || 'Gallery', images: imgs.slice(0, 12), thumbnails: imgs.slice(0, 6) });
+        }
+      });
+      if (baseGalleryRooms.length) {
+        data.room_galleries = baseGalleryRooms;
+        debugInfo.phases.push('baseGalleryFallback');
+      }
+      debugInfo.counts.baseGalleryRooms = baseGalleryRooms.length;
+    }
+
+    // Phase 3: Parse inline JSON structures in <script> tags (React hydration data)
+    if (!data.room_galleries || data.room_galleries.length === 0) {
+      const jsonRoomGalleries: any[] = [];
+      $('script').each((_, script) => {
+        const content = $(script).html() || '';
+        if (content.includes('worldota') && content.includes('room')) {
+          // Try to locate JSON objects with image URLs
+          const galleryJsonMatches = content.match(/\{[^{}]*?(?:room|title)[^{}]*?cdn\\.worldota[^{}]*?\}/g);
+          if (galleryJsonMatches) {
+            galleryJsonMatches.forEach(raw => {
+              // Relaxed sanitation
+              const cleaned = raw
+                .replace(/(\w+)\s*:/g, '"$1":')
+                .replace(/'(https?:[^']+)'/g, '"$1"');
+              try {
+                const maybe = JSON.parse(cleaned);
+                const urls = JSON.stringify(maybe).match(/https:\/\/cdn\.worldota\.net[^"']+\.(?:jpg|jpeg|png|webp)/gi) || [];
+                if (urls.length) {
+                  jsonRoomGalleries.push({ room_type: maybe.title || maybe.room_type || 'Room', images: Array.from(new Set(urls)).slice(0, 15) });
+                }
+              } catch { /* ignore JSON parse issues */ }
+            });
+          }
+        }
+      });
+      if (jsonRoomGalleries.length) {
+        data.room_galleries = jsonRoomGalleries;
+        debugInfo.phases.push('scriptJsonFallback');
+      }
+      debugInfo.counts.jsonRoomGalleries = jsonRoomGalleries.length;
+    }
+
+    // Phase 4: Heuristic block parsing - find title followed by cluster of images in proximity
+    if (!data.room_galleries || data.room_galleries.length === 0) {
+      const heuristicGalleries: any[] = [];
+      const titles: string[] = [];
+      $('h2, h3, h4, [class*="title"], [class*="Title"]').each((_, el) => {
+        const txt = $(el).text().trim();
+        if (txt && txt.length > 3 && txt.length < 100 && /room|villa|suite|bungalow|делюкс|вилла|сьют/i.test(txt) && !titles.includes(txt)) {
+          titles.push(txt);
+          // Search next siblings for images
+          const imagesCluster: string[] = [];
+          let sibling = $(el).next();
+          let hops = 0;
+          while (sibling.length && hops < 5 && imagesCluster.length < 20) {
+            sibling.find('img').each((_, img) => {
+              const src = $(img).attr('src');
+              if (src && src.includes('cdn.worldota.net') && /\.(jpg|jpeg|png|webp)/.test(src) && !imagesCluster.includes(src)) {
+                imagesCluster.push(src);
+              }
+            });
+            sibling = sibling.next();
+            hops++;
+          }
+          if (imagesCluster.length >= 3) {
+            heuristicGalleries.push({ room_type: txt, images: imagesCluster.slice(0, 15), thumbnails: imagesCluster.slice(0, 6) });
+          }
+        }
+      });
+      if (heuristicGalleries.length) {
+        data.room_galleries = heuristicGalleries;
+        debugInfo.phases.push('heuristicTitleCluster');
+      }
+      debugInfo.counts.heuristicGalleries = heuristicGalleries.length;
+    }
+
+    // Deduplicate galleries by room_type
+    if (data.room_galleries && data.room_galleries.length > 1) {
+      const seen = new Map<string, any>();
+      for (const g of data.room_galleries) {
+        const key = (g.room_type || 'Room').toLowerCase();
+        if (!seen.has(key)) {
+          seen.set(key, g);
+        } else {
+          // merge images
+          const existing = seen.get(key);
+            existing.images = Array.from(new Set([...(existing.images||[]), ...(g.images||[])]));
+            if (g.thumbnails) {
+              existing.thumbnails = Array.from(new Set([...(existing.thumbnails||[]), ...(g.thumbnails||[])]));
+            }
+        }
+      }
+      data.room_galleries = Array.from(seen.values());
+      debugInfo.counts.dedupedRoomGalleries = data.room_galleries.length;
     }
 
     // Extract additional room gallery data from JavaScript using Cheerio
@@ -542,11 +653,15 @@ async function extractEnhancedHotelData(html: string, masterId: string): Promise
       data.hotel_facts = hotelFacts;
     }
 
-    console.log(`✅ Enhanced Cheerio extraction completed: name=${data.name}, rating=${data.rating}, rooms=${rooms.length}, galleries=${roomGalleries.length}, amenities=${amenities.length}`);
+    console.log(`✅ Enhanced Cheerio extraction completed: name=${data.name}, rating=${data.rating}, rooms=${rooms.length}, galleries=${(data.room_galleries||[]).length}, amenities=${amenities.length}`);
+    debugInfo.counts.finalRoomGalleries = (data.room_galleries||[]).length;
 
   } catch (error) {
     console.error('❌ Error in enhanced parsing:', error);
+    debugInfo.warnings.push('enhancedParsingError');
   }
+
+  if (opts.debug) data.__debug = debugInfo;
 
   return data;
 }
