@@ -115,16 +115,14 @@ export default async function handler(req: Request): Promise<Response> {
     //   }), { status: 429, headers: corsHeaders });
     // }
 
-  let hotelUrl: string;
-  let masterId: string;
-  let otaHotelId: string;
-  let regionSlug: string;
-  let debug = false;
+    let hotelUrl: string;
+    let masterId: string;
+    let otaHotelId: string;
+    let regionSlug: string;
 
     // Parse parameters based on request method
     if (req.method === 'GET') {
       const url = new URL(req.url, `https://${req.headers.get('host') || 'localhost'}`);
-      debug = url.searchParams.get('debug') === '1';
       
       // Option 1: Direct URL parameter
       const directUrl = url.searchParams.get('url');
@@ -161,7 +159,6 @@ export default async function handler(req: Request): Promise<Response> {
     } else {
       // POST request handling (similar to existing scrape.ts)
       const body = await req.json();
-      debug = !!body.debug;
       
       if (body.url) {
         hotelUrl = body.url;
@@ -232,9 +229,9 @@ export default async function handler(req: Request): Promise<Response> {
     console.log(`✅ Fetched HTML content (${html.length} chars)`);
 
     // Parse HTML and extract enhanced structured data
-    const scrapedData = await extractEnhancedHotelData(html, masterId, { debug });
+    const scrapedData = await extractEnhancedHotelData(html, masterId);
 
-    const responsePayload: any = {
+    return new Response(JSON.stringify({
       success: true,
       data: {
         master_id: masterId,
@@ -243,12 +240,10 @@ export default async function handler(req: Request): Promise<Response> {
         source_url: hotelUrl,
         scraped_at: new Date().toISOString(),
         hotel: scrapedData,
-        scraper_version: "enhanced_v1.1"
+        scraper_version: "enhanced_v1.0"
       },
       message: 'Enhanced hotel data scraped successfully'
-    };
-    if (debug) responsePayload.debug = scrapedData.__debug; // attach debug diagnostics
-    return new Response(JSON.stringify(responsePayload), { status: 200, headers: corsHeaders });
+    }), { status: 200, headers: corsHeaders });
 
   } catch (error) {
     console.error('❌ Enhanced Scraping error:', error);
@@ -262,15 +257,8 @@ export default async function handler(req: Request): Promise<Response> {
 }
 
 // Enhanced HTML parsing function using Cheerio
-interface ExtractionOptions { debug?: boolean }
-
-async function extractEnhancedHotelData(html: string, masterId: string, opts: ExtractionOptions = {}): Promise<EnhancedScrapedHotelData & { __debug?: any }> {
-  const data: EnhancedScrapedHotelData & { __debug?: any } = {};
-  const debugInfo: any = {
-    phases: [],
-    counts: {},
-    warnings: []
-  };
+async function extractEnhancedHotelData(html: string, masterId: string): Promise<EnhancedScrapedHotelData> {
+  const data: EnhancedScrapedHotelData = {};
 
   try {
     // Parse HTML using Cheerio
@@ -305,23 +293,35 @@ async function extractEnhancedHotelData(html: string, masterId: string, opts: Ex
       }
     }
 
-    // Extract hotel images using Cheerio
+    // Extract hotel images using multiple strategies (src, data-src, srcset, style background-image)
     const images: string[] = [];
-    $('img[src*="cdn.worldota.net"]').each((_, img) => {
-      const src = $(img).attr('src');
-      if (src && 
-          !src.includes('data:') && 
-          !src.includes('.js') && 
-          !src.includes('webpack') &&
-          src.match(/\.(jpg|jpeg|png|webp)/) &&
-          !images.includes(src)) {
-        images.push(src);
-      }
+    const pushImage = (url?: string) => {
+      if (!url) return;
+      const firstPart = url.split(' ')[0];
+      const clean = firstPart ? firstPart.trim() : '';
+      if (
+        clean &&
+        clean.startsWith('http') &&
+        clean.includes('cdn.worldota.net') &&
+        /\.(jpg|jpeg|png|webp)/.test(clean) &&
+        !clean.includes('data:') &&
+        !images.includes(clean)
+      ) images.push(clean);
+    };
+    $('img').each((_, img) => {
+      const el = $(img);
+      pushImage(el.attr('src'));
+      (el.attr('data-src') || el.attr('data-lazy')) && pushImage(el.attr('data-src') || el.attr('data-lazy'));
+      const srcset = el.attr('srcset') || el.attr('data-srcset');
+      if (srcset) srcset.split(',').forEach(part => pushImage(part.trim()));
     });
-    
-    if (images.length > 0) {
-      data.images = images.slice(0, 15);
-    }
+    // Background images in inline styles
+    $('[style*="background"]').each((_, node) => {
+      const style = ($(node).attr('style') || '').replace(/\\s+/g,' ');
+      const match = style.match(/url\(\s*['"]?(https?:[^'")]+worldota[^'")]+)['"]?\s*\)/i);
+      if (match) pushImage(match[1]);
+    });
+    if (images.length > 0) data.images = images.slice(0, 25);
 
     // Extract enhanced room information and room galleries using Cheerio
     const rooms: any[] = [];
@@ -393,168 +393,89 @@ async function extractEnhancedHotelData(html: string, masterId: string, opts: Ex
       data.rooms = rooms;
     }
 
-    // Extract room galleries from DesktopPopup structures using Cheerio (Phase 1)
-    let desktopPopupCount = 0;
-    $('.DesktopPopup_root__iVcfK').each((_, popup) => {
+    // 1. Extract room galleries from already present DesktopPopup structures (if server-rendered)
+    $('.DesktopPopup_root__').each((_, popup) => { /* generic safeguard if class suffix hashed differently */
       const $popup = $(popup);
-      
-      // Get room type from popup title
-      const roomTitle = $popup.find('.DesktopPopup_title__KCelg').first().text().trim();
-      
-      if (roomTitle) {
-        const roomImages: string[] = [];
-        const thumbnails: string[] = [];
-        
-        // Extract images from ImagesLayout_wrapper
-        $popup.find('.ImagesLayout_wrapper__yh9dY img').each((_, img) => {
-          const src = $(img).attr('src');
-          if (src && src.includes('cdn.worldota.net') && src.match(/\.(jpg|jpeg|png|webp)/)) {
-            roomImages.push(src);
-          }
+      const titleSelector = '[class^="DesktopPopup_title__"], .DesktopPopup_title__KCelg';
+      const roomTitle = $popup.find(titleSelector).first().text().trim();
+      if (!roomTitle) return;
+      const rImgs: string[] = [];
+      const thumbs: string[] = [];
+      const collect = (sel: string) => {
+        $popup.find(sel).each((__, img) => {
+          const src = $(img).attr('src') || $(img).attr('data-src');
+          if (src && src.includes('worldota') && /\.(jpg|jpeg|png|webp)/.test(src) && !rImgs.includes(src)) rImgs.push(src);
         });
-        
-        // Extract images from Gallery slides
-        $popup.find('.Gallery_slide__D99ch img').each((_, img) => {
-          const src = $(img).attr('src');
-          if (src && src.includes('cdn.worldota.net') && src.match(/\.(jpg|jpeg|png|webp)/) && !roomImages.includes(src)) {
-            roomImages.push(src);
-          }
-        });
-        
-        // Extract thumbnails from Thumbnails section
-        $popup.find('.Thumbnails_root__RgHkA img').each((_, img) => {
-          const src = $(img).attr('src');
-          if (src && src.includes('cdn.worldota.net') && src.match(/\.(jpg|jpeg|png|webp)/)) {
-            thumbnails.push(src);
-          }
-        });
-        
-        if (roomImages.length > 0) {
-          roomGalleries.push({
-            room_type: roomTitle,
-            images: roomImages.slice(0, 15),
-            thumbnails: thumbnails.slice(0, 8)
-          });
-        }
-        desktopPopupCount++;
+      };
+      collect('.ImagesLayout_wrapper__yh9dY img');
+      collect('.Gallery_slide__D99ch img');
+      $popup.find('.Thumbnails_root__RgHkA img').each((_, img) => {
+        const src = $(img).attr('src');
+        if (src && src.includes('worldota') && !thumbs.includes(src)) thumbs.push(src);
+      });
+      if (rImgs.length) roomGalleries.push({ room_type: roomTitle, images: rImgs.slice(0, 20), thumbnails: thumbs.slice(0, 10) });
+    });
+
+    // 2. Attempt to derive galleries from base gallery elements that would trigger popups client-side
+    // We can't click on server, but we can group images appearing near gallery roots.
+    const potentialBaseGalleries: any[] = [];
+    $('[class^="BaseGallery_root_"]').each((i, gal) => {
+      const $gal = $(gal);
+      const localImgs: string[] = [];
+      $gal.find('img').each((_, img) => {
+        const src = $(img).attr('src') || $(img).attr('data-src');
+        if (src && src.includes('worldota') && /\.(jpg|jpeg|png|webp)/.test(src) && !localImgs.includes(src)) localImgs.push(src);
+      });
+      if (localImgs.length) potentialBaseGalleries.push({ index: i, images: localImgs });
+    });
+
+    // 3. Parse embedded JSON/state for room galleries (script tags)
+  interface JsonGallery { room_type: string; images: string[] }
+  const jsonRoomGalleries: JsonGallery[] = [];
+    $('script').each((_, script) => {
+      const content = $(script).html();
+      if (!content) return;
+      // Find JSON objects containing image arrays with worldota URLs
+      const imageArrayRegex = /\{[^{}]*?(?:room|title|name)\"?\s*:\s*\"([^\"]{3,80}?)\"[^{}]*?\"images\"\s*:\s*\[(.*?)\][^{}]*?\}/gis;
+      let match: RegExpExecArray | null;
+      while ((match = imageArrayRegex.exec(content)) !== null) {
+        const roomTypeRaw: string | undefined = match[1];
+        const imagesBlock: string | undefined = match[2];
+        if (!imagesBlock || !/worldota/.test(imagesBlock)) continue;
+        const imgUrls = Array.from(imagesBlock.matchAll(/https:\/\/cdn\.worldota\.net\/[^"'\s]+\.(?:jpg|jpeg|png|webp)/gi)).map(m => m[0]).filter(Boolean) as string[];
+        if (imgUrls.length && roomTypeRaw) jsonRoomGalleries.push({ room_type: roomTypeRaw.replace(/[_-]+/g,' ').trim(), images: [...new Set(imgUrls)].slice(0,20) });
+      }
+      // Generic arrays of worldota images without room type
+      if (/worldota/.test(content) && jsonRoomGalleries.length === 0) {
+        const looseImgs = Array.from(content.matchAll(/https:\/\/cdn\.worldota\.net\/[^"'\s]+\.(?:jpg|jpeg|png|webp)/gi)).map(m=>m[0]);
+        if (looseImgs.length) jsonRoomGalleries.push({ room_type: 'Gallery', images: [...new Set(looseImgs)].slice(0,30) });
       }
     });
 
+    // Merge JSON-derived galleries if they provide new images
+    jsonRoomGalleries.forEach(g => {
+      const existing = roomGalleries.find(r => r.room_type === g.room_type);
+      if (existing) {
+        g.images.forEach(u => { if (!existing.images.includes(u)) existing.images.push(u); });
+      } else {
+        roomGalleries.push({ room_type: g.room_type, images: g.images, thumbnails: g.images.slice(0,8) });
+      }
+    });
+
+    // 4. Fallback: if still no room_galleries, try to create one generic from potential base galleries
+    if (!roomGalleries.length && potentialBaseGalleries.length) {
+      const merged = new Set<string>();
+      potentialBaseGalleries.forEach(g => g.images.forEach((u: string) => merged.add(u)));
+      const mergedArr = Array.from(merged).slice(0,30);
+      if (mergedArr.length) roomGalleries.push({ room_type: 'Rooms Gallery (fallback)', images: mergedArr, thumbnails: mergedArr.slice(0,10) });
+    }
+
     if (roomGalleries.length > 0) {
-      data.room_galleries = roomGalleries;
-    }
-
-    debugInfo.counts.desktopPopupGalleries = desktopPopupCount;
-
-    // Phase 2: Fallback - BaseGallery roots (thumbnails before click)
-    if (!data.room_galleries || data.room_galleries.length === 0) {
-      const baseGalleryRooms: any[] = [];
-      $('[class^="BaseGallery_root"], [class*=" BaseGallery_root"]').each((_, gal) => {
-        const $gal = $(gal);
-        const parentText = $gal.parent().text().trim().split('\n')[0];
-        const potentialTitle = parentText && parentText.length < 80 ? parentText : undefined;
-        const imgs: string[] = [];
-        $gal.find('img').each((_, img) => {
-          const src = $(img).attr('src');
-            if (src && src.includes('cdn.worldota.net') && /\.(jpg|jpeg|png|webp)/.test(src) && !imgs.includes(src)) {
-              imgs.push(src);
-            }
-        });
-        if (imgs.length) {
-          baseGalleryRooms.push({ room_type: potentialTitle || 'Gallery', images: imgs.slice(0, 12), thumbnails: imgs.slice(0, 6) });
-        }
-      });
-      if (baseGalleryRooms.length) {
-        data.room_galleries = baseGalleryRooms;
-        debugInfo.phases.push('baseGalleryFallback');
-      }
-      debugInfo.counts.baseGalleryRooms = baseGalleryRooms.length;
-    }
-
-    // Phase 3: Parse inline JSON structures in <script> tags (React hydration data)
-    if (!data.room_galleries || data.room_galleries.length === 0) {
-      const jsonRoomGalleries: any[] = [];
-      $('script').each((_, script) => {
-        const content = $(script).html() || '';
-        if (content.includes('worldota') && content.includes('room')) {
-          // Try to locate JSON objects with image URLs
-          const galleryJsonMatches = content.match(/\{[^{}]*?(?:room|title)[^{}]*?cdn\\.worldota[^{}]*?\}/g);
-          if (galleryJsonMatches) {
-            galleryJsonMatches.forEach(raw => {
-              // Relaxed sanitation
-              const cleaned = raw
-                .replace(/(\w+)\s*:/g, '"$1":')
-                .replace(/'(https?:[^']+)'/g, '"$1"');
-              try {
-                const maybe = JSON.parse(cleaned);
-                const urls = JSON.stringify(maybe).match(/https:\/\/cdn\.worldota\.net[^"']+\.(?:jpg|jpeg|png|webp)/gi) || [];
-                if (urls.length) {
-                  jsonRoomGalleries.push({ room_type: maybe.title || maybe.room_type || 'Room', images: Array.from(new Set(urls)).slice(0, 15) });
-                }
-              } catch { /* ignore JSON parse issues */ }
-            });
-          }
-        }
-      });
-      if (jsonRoomGalleries.length) {
-        data.room_galleries = jsonRoomGalleries;
-        debugInfo.phases.push('scriptJsonFallback');
-      }
-      debugInfo.counts.jsonRoomGalleries = jsonRoomGalleries.length;
-    }
-
-    // Phase 4: Heuristic block parsing - find title followed by cluster of images in proximity
-    if (!data.room_galleries || data.room_galleries.length === 0) {
-      const heuristicGalleries: any[] = [];
-      const titles: string[] = [];
-      $('h2, h3, h4, [class*="title"], [class*="Title"]').each((_, el) => {
-        const txt = $(el).text().trim();
-        if (txt && txt.length > 3 && txt.length < 100 && /room|villa|suite|bungalow|делюкс|вилла|сьют/i.test(txt) && !titles.includes(txt)) {
-          titles.push(txt);
-          // Search next siblings for images
-          const imagesCluster: string[] = [];
-          let sibling = $(el).next();
-          let hops = 0;
-          while (sibling.length && hops < 5 && imagesCluster.length < 20) {
-            sibling.find('img').each((_, img) => {
-              const src = $(img).attr('src');
-              if (src && src.includes('cdn.worldota.net') && /\.(jpg|jpeg|png|webp)/.test(src) && !imagesCluster.includes(src)) {
-                imagesCluster.push(src);
-              }
-            });
-            sibling = sibling.next();
-            hops++;
-          }
-          if (imagesCluster.length >= 3) {
-            heuristicGalleries.push({ room_type: txt, images: imagesCluster.slice(0, 15), thumbnails: imagesCluster.slice(0, 6) });
-          }
-        }
-      });
-      if (heuristicGalleries.length) {
-        data.room_galleries = heuristicGalleries;
-        debugInfo.phases.push('heuristicTitleCluster');
-      }
-      debugInfo.counts.heuristicGalleries = heuristicGalleries.length;
-    }
-
-    // Deduplicate galleries by room_type
-    if (data.room_galleries && data.room_galleries.length > 1) {
-      const seen = new Map<string, any>();
-      for (const g of data.room_galleries) {
-        const key = (g.room_type || 'Room').toLowerCase();
-        if (!seen.has(key)) {
-          seen.set(key, g);
-        } else {
-          // merge images
-          const existing = seen.get(key);
-            existing.images = Array.from(new Set([...(existing.images||[]), ...(g.images||[])]));
-            if (g.thumbnails) {
-              existing.thumbnails = Array.from(new Set([...(existing.thumbnails||[]), ...(g.thumbnails||[])]));
-            }
-        }
-      }
-      data.room_galleries = Array.from(seen.values());
-      debugInfo.counts.dedupedRoomGalleries = data.room_galleries.length;
+      data.room_galleries = roomGalleries.map(g => ({
+        room_type: typeof g.room_type === 'string' ? g.room_type : undefined,
+        images: Array.isArray(g.images) ? ([...new Set(g.images as string[])].slice(0,40)) : undefined,
+        thumbnails: Array.isArray(g.thumbnails) ? ([...new Set(g.thumbnails as string[])].slice(0,12)) : (Array.isArray(g.images) ? (g.images as string[]).slice(0,8) : undefined)
+      }));
     }
 
     // Extract additional room gallery data from JavaScript using Cheerio
@@ -653,15 +574,11 @@ async function extractEnhancedHotelData(html: string, masterId: string, opts: Ex
       data.hotel_facts = hotelFacts;
     }
 
-    console.log(`✅ Enhanced Cheerio extraction completed: name=${data.name}, rating=${data.rating}, rooms=${rooms.length}, galleries=${(data.room_galleries||[]).length}, amenities=${amenities.length}`);
-    debugInfo.counts.finalRoomGalleries = (data.room_galleries||[]).length;
+    console.log(`✅ Enhanced Cheerio extraction completed: name=${data.name}, rating=${data.rating}, rooms=${rooms.length}, galleries=${roomGalleries.length}, amenities=${amenities.length}`);
 
   } catch (error) {
     console.error('❌ Error in enhanced parsing:', error);
-    debugInfo.warnings.push('enhancedParsingError');
   }
-
-  if (opts.debug) data.__debug = debugInfo;
 
   return data;
 }
