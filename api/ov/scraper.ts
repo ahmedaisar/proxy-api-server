@@ -1,4 +1,5 @@
-import { RateLimiter } from '../../src/middleware/rateLimiter';
+//import { RateLimiter } from '../../src/middleware/rateLimiter';
+
 import * as cheerio from 'cheerio';
 
 export const config = {
@@ -6,7 +7,7 @@ export const config = {
 };
 
 // Create a global rate limiter instance
-const rateLimiter = new RateLimiter(60, 60_000);
+//const rateLimiter = new RateLimiter(60, 60_000);
 
 function getClientIp(req: Request): string {
   return (
@@ -102,17 +103,17 @@ export default async function handler(req: Request): Promise<Response> {
       }), { status: 405, headers: corsHeaders });
     }
 
-    // Apply rate limiting
-    const clientIp = getClientIp(req);
-    const rateLimitCheck = rateLimiter.check(clientIp);
+    // // Apply rate limiting
+    // const clientIp = getClientIp(req);
+    // const rateLimitCheck = rateLimiter.check(clientIp);
     
-    if (!rateLimitCheck.allowed) {
-      return new Response(JSON.stringify({
-        error: "Rate limit exceeded. Please try again later.",
-        rateLimitRemaining: rateLimitCheck.remaining,
-        timestamp: new Date().toISOString()
-      }), { status: 429, headers: corsHeaders });
-    }
+    // if (!rateLimitCheck.allowed) {
+    //   return new Response(JSON.stringify({
+    //     error: "Rate limit exceeded. Please try again later.",
+    //     rateLimitRemaining: rateLimitCheck.remaining,
+    //     timestamp: new Date().toISOString()
+    //   }), { status: 429, headers: corsHeaders });
+    // }
 
     let hotelUrl: string;
     let masterId: string;
