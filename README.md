@@ -236,6 +236,28 @@ Enhanced scraper with better parsing capabilities and room gallery extraction.
 - Better structured amenity categorization
 - Improved data quality and accuracy
 
+---
+
+### 8. Ostrovok Location Autocomplete
+
+```http
+GET /api/autocomplete?query=maldives&locale=en
+```
+
+Get location suggestions for autocomplete functionality from Ostrovok's API.
+
+**Query Parameters:**
+
+- `query` - Search term for location suggestions (required)
+- `locale` - Response language (default: en)
+
+**Response includes:**
+
+- Location suggestions with types (country, region, city)
+- Hotel suggestions
+- Search suggestions
+- ID mappings for use with other endpoints
+
 ## 🏗️ Project Structure
 
 ```
