@@ -9,8 +9,8 @@ A high-performance API proxy server built for Vercel Edge Runtime, providing hot
 - 🌐 **CORS Enabled**: Full cross-origin request support
 - 📱 **TypeScript**: Full type safety and IntelliSense
 - ⚡ **Serverless**: Auto-scaling with zero cold starts on Edge Runtime
-- 🏨 **Multi-API Support**: AnexTour and Ostrovok.ru integration
-- 🔍 **Web Scraping**: Rich hotel data extraction from Ostrovok pages
+- 🏨 **Multi-API Support**: AnexTour and integration
+- 🔍 **Web Scraping**: Rich hotel data extraction from pages
 
 ## 🚀 Quick Start
 
@@ -118,14 +118,14 @@ Get detailed information for a specific hotel using its slug from search results
 
 ---
 
-### 4. Ostrovok Hotel Search
+### 4. Hotel Search
 
 ```http
 GET /api/ov/search?region_id=109&arrival_date=2025-11-10&departure_date=2025-11-15&adults=2
 POST /api/ov/search
 ```
 
-Search hotels via Ostrovok.ru API with flexible parameter support.
+Search hotels via API with flexible parameter support.
 
 **GET Query Parameters / POST Body:**
 
@@ -159,14 +159,14 @@ Search hotels via Ostrovok.ru API with flexible parameter support.
 
 ---
 
-### 5. Ostrovok Hotel Details
+### 5. Hotel Details
 
 ```http
 GET /api/ov/hotel?hotel=reethi_faru_resort&arrival_date=2026-01-12&departure_date=2026-01-17
 POST /api/ov/hotel
 ```
 
-Get detailed hotel information from Ostrovok API with pricing and availability.
+Get detailed hotel information from API with pricing and availability.
 
 **GET Query Parameters / POST Body:**
 
@@ -180,13 +180,13 @@ Get detailed hotel information from Ostrovok API with pricing and availability.
 
 ---
 
-### 6. Ostrovok Hotel Scraper
+### 6. Hotel Scraper
 
 ```http
 GET /api/ov/scrape?master_id=6669997&ota_hotel_id=canareef_resort_maldives&region_slug=maldives/addu_atoll
 ```
 
-Scrape detailed hotel information directly from Ostrovok hotel pages.
+Scrape detailed hotel information directly from hotel pages.
 
 **Query Parameters:**
 
@@ -205,7 +205,7 @@ Scrape detailed hotel information directly from Ostrovok hotel pages.
 
 ---
 
-### 7. Enhanced Ostrovok Scraper
+### 7. Enhanced Scraper
 
 ```http
 GET /api/ov/scraper?master_id=6669997&ota_hotel_id=canareef_resort_maldives&region_slug=maldives/addu_atoll
@@ -219,7 +219,7 @@ Enhanced scraper with better parsing capabilities and room gallery extraction.
 - `master_id` - Hotel master ID (required)
 - `ota_hotel_id` - OTA hotel identifier (required)  
 - `region_slug` - Region slug path (required)
-- `url` - Direct Ostrovok URL (alternative to individual parameters)
+- `url` - Direct URL (alternative to individual parameters)
 
 **Enhanced Features:**
 - **Cheerio-based HTML parsing** for accurate DOM manipulation
@@ -238,13 +238,13 @@ Enhanced scraper with better parsing capabilities and room gallery extraction.
 
 ---
 
-### 8. Ostrovok Location Autocomplete
+### 8. Location Autocomplete
 
 ```http
 GET /api/autocomplete?query=maldives&locale=en
 ```
 
-Get location suggestions for autocomplete functionality from Ostrovok's API.
+Get location suggestions for autocomplete functionality from API.
 
 **Query Parameters:**
 
@@ -267,7 +267,7 @@ Get location suggestions for autocomplete functionality from Ostrovok's API.
 │   ├── hotels/
 │   │   └── index.ts        # AnexTour hotel details
 │   └── ov/
-│       └── search.ts       # Ostrovok hotel search
+│       └── search.ts       # hotel search
 ├── src/                    # Shared utilities
 │   ├── middleware/
 │   │   └── rateLimiter.ts  # Rate limiting middleware
